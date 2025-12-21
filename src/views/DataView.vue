@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { Line } from 'vue-chartjs'
 import {
   Chart as ChartJS,
@@ -18,6 +19,7 @@ import type { BodyMetric } from '@/lib/database.types'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend)
 
+const router = useRouter()
 const auth = useAuthStore()
 
 const metrics = ref<BodyMetric[]>([])
@@ -79,31 +81,43 @@ function formatStLbs(st: number | null, lbs: number | null): string {
   return `${stVal} st ${lbsVal} lbs`
 }
 
-// Dummy data for initial display (in st and lbs)
-const dummyData: { date: string; fatSt: number; fatLbs: number; muscleSt: number; muscleLbs: number }[] = [
-  { date: '2024-11-01', fatSt: 3, fatLbs: 0, muscleSt: 9, muscleLbs: 0 },
-  { date: '2024-11-15', fatSt: 2, fatLbs: 12, muscleSt: 9, muscleLbs: 2 },
-  { date: '2024-12-01', fatSt: 2, fatLbs: 10, muscleSt: 9, muscleLbs: 4 },
-  { date: '2024-12-15', fatSt: 2, fatLbs: 8, muscleSt: 9, muscleLbs: 6 },
-  { date: '2025-01-01', fatSt: 2, fatLbs: 7, muscleSt: 9, muscleLbs: 8 },
-]
+// Convert st/lbs to total lbs for comparison
+function toTotalLbs(st: number | null, lbs: number | null): number {
+  return ((st || 0) * 14) + (lbs || 0)
+}
+
+// Get trend compared to previous entry (returns 'up', 'down', or 'same')
+function getTrend(currentIndex: number, type: 'fat' | 'muscle'): 'up' | 'down' | 'same' | null {
+  // sortedMetrics is newest first, so previous entry is at currentIndex + 1
+  if (currentIndex >= sortedMetrics.value.length - 1) return null
+
+  const current = sortedMetrics.value[currentIndex]
+  const previous = sortedMetrics.value[currentIndex + 1]
+
+  if (!current || !previous) return null
+
+  const currentVal = type === 'fat'
+    ? toTotalLbs(current.fat_st, current.fat_lbs)
+    : toTotalLbs(current.muscle_st, current.muscle_lbs)
+  const previousVal = type === 'fat'
+    ? toTotalLbs(previous.fat_st, previous.fat_lbs)
+    : toTotalLbs(previous.muscle_st, previous.muscle_lbs)
+
+  if (currentVal > previousVal) return 'up'
+  if (currentVal < previousVal) return 'down'
+  return 'same'
+}
 
 const chartData = computed(() => {
-  const dataSource = metrics.value.length > 0
-    ? metrics.value.map((m) => ({
-        date: new Date(m.recorded_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
-        fatSt: m.fat_st || 0,
-        fatLbs: m.fat_lbs || 0,
-        muscleSt: m.muscle_st || 0,
-        muscleLbs: m.muscle_lbs || 0,
-      }))
-    : dummyData.map((d) => ({
-        date: new Date(d.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
-        fatSt: d.fatSt,
-        fatLbs: d.fatLbs,
-        muscleSt: d.muscleSt,
-        muscleLbs: d.muscleLbs,
-      }))
+  if (metrics.value.length === 0) return { labels: [], datasets: [] }
+
+  const dataSource = metrics.value.map((m) => ({
+    date: new Date(m.recorded_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
+    fatSt: m.fat_st || 0,
+    fatLbs: m.fat_lbs || 0,
+    muscleSt: m.muscle_st || 0,
+    muscleLbs: m.muscle_lbs || 0,
+  }))
 
   const labels = dataSource.map((d) => d.date)
   // Convert to total lbs for graphing (1 stone = 14 lbs)
@@ -184,11 +198,13 @@ const chartOptions = computed(() => {
 })
 
 async function loadMetrics() {
+  if (!auth.user?.id) return
   isLoading.value = true
   try {
     const { data, error } = await supabase
       .from('body_metrics')
       .select('*')
+      .eq('user_id', auth.user.id)
       .order('recorded_at', { ascending: true })
 
     if (error) throw error
@@ -276,7 +292,30 @@ const sortedMetrics = computed(() => {
 <template>
   <div class="min-h-screen bg-slate-900 text-white">
     <header class="bg-slate-800 border-b border-slate-700 px-4 py-4">
-      <h1 class="text-xl font-bold text-emerald-400">Trackd</h1>
+      <div class="flex items-center justify-between">
+        <div class="w-20"></div>
+        <h1 class="text-xl font-bold text-emerald-400">Trackd</h1>
+        <div class="flex items-center gap-3 w-20 justify-end">
+          <button
+            @click="router.push('/goals')"
+            class="text-slate-400 hover:text-white p-1"
+            title="Goals"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+            </svg>
+          </button>
+          <button
+            @click="auth.signOut()"
+            class="text-slate-400 hover:text-white p-1"
+            title="Sign Out"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+          </button>
+        </div>
+      </div>
     </header>
 
     <TabNav />
@@ -317,7 +356,7 @@ const sortedMetrics = computed(() => {
           <Line :data="chartData" :options="chartOptions" />
         </div>
         <p v-if="metrics.length === 0" class="text-xs text-slate-500 mt-2 text-center">
-          Showing sample data. Add your first entry below.
+          No data yet. Add your first entry below.
         </p>
       </div>
 
@@ -427,7 +466,7 @@ const sortedMetrics = computed(() => {
 
         <div v-else class="space-y-2">
           <div
-            v-for="metric in sortedMetrics"
+            v-for="(metric, index) in sortedMetrics"
             :key="metric.id"
             class="bg-slate-800 rounded-xl p-4"
           >
@@ -438,13 +477,25 @@ const sortedMetrics = computed(() => {
               >
                 <p class="text-sm text-slate-500 mb-1">{{ formatDate(metric.recorded_at) }}</p>
                 <div class="flex gap-4">
-                  <div>
+                  <div class="flex items-center gap-1">
                     <span class="text-xs text-red-400">Fat:</span>
                     <span class="ml-1 font-medium">{{ formatStLbs(metric.fat_st, metric.fat_lbs) }}</span>
+                    <svg v-if="getTrend(index, 'fat') === 'down'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
+                      <path fill-rule="evenodd" d="M16.707 10.293a1 1 0 010 1.414l-6 6a1 1 0 01-1.414 0l-6-6a1 1 0 111.414-1.414L9 14.586V3a1 1 0 012 0v11.586l4.293-4.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                    </svg>
+                    <svg v-else-if="getTrend(index, 'fat') === 'up'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
+                      <path fill-rule="evenodd" d="M3.293 9.707a1 1 0 010-1.414l6-6a1 1 0 011.414 0l6 6a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L4.707 9.707a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+                    </svg>
                   </div>
-                  <div>
+                  <div class="flex items-center gap-1">
                     <span class="text-xs text-emerald-400">Muscle:</span>
                     <span class="ml-1 font-medium">{{ formatStLbs(metric.muscle_st, metric.muscle_lbs) }}</span>
+                    <svg v-if="getTrend(index, 'muscle') === 'up'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
+                      <path fill-rule="evenodd" d="M3.293 9.707a1 1 0 010-1.414l6-6a1 1 0 011.414 0l6 6a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L4.707 9.707a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+                    </svg>
+                    <svg v-else-if="getTrend(index, 'muscle') === 'down'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
+                      <path fill-rule="evenodd" d="M16.707 10.293a1 1 0 010 1.414l-6 6a1 1 0 01-1.414 0l-6-6a1 1 0 111.414-1.414L9 14.586V3a1 1 0 012 0v11.586l4.293-4.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                    </svg>
                   </div>
                 </div>
               </button>

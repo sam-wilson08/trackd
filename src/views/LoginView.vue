@@ -9,6 +9,7 @@ const auth = useAuthStore()
 const isSignUp = ref(false)
 const email = ref('')
 const password = ref('')
+const firstName = ref('')
 const error = ref('')
 const isSubmitting = ref(false)
 
@@ -18,7 +19,7 @@ async function handleSubmit() {
 
   try {
     if (isSignUp.value) {
-      await auth.signUp(email.value, password.value)
+      await auth.signUp(email.value, password.value, firstName.value)
       error.value = 'Check your email to confirm your account!'
     } else {
       await auth.signIn(email.value, password.value)
@@ -50,6 +51,18 @@ async function handleSubmit() {
         </div>
 
         <div class="space-y-4">
+          <div v-if="isSignUp">
+            <label for="firstName" class="block text-sm font-medium text-slate-300 mb-1">First Name</label>
+            <input
+              id="firstName"
+              v-model="firstName"
+              type="text"
+              required
+              class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+              placeholder="Your first name"
+            />
+          </div>
+
           <div>
             <label for="email" class="block text-sm font-medium text-slate-300 mb-1">Email</label>
             <input

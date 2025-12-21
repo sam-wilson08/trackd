@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import TabNav from '@/components/TabNav.vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import type { ProteinIntake } from '@/lib/database.types'
+
+const router = useRouter()
 
 const auth = useAuthStore()
 
@@ -158,11 +161,13 @@ const todayTotal = computed(() => {
 })
 
 async function loadIntakes() {
+  if (!auth.user?.id) return
   isLoading.value = true
   try {
     const { data, error } = await supabase
       .from('protein_intake')
       .select('*')
+      .eq('user_id', auth.user.id)
       .order('recorded_at', { ascending: false })
 
     if (error) throw error
@@ -205,7 +210,30 @@ onMounted(() => {
 <template>
   <div class="min-h-screen bg-slate-900 text-white">
     <header class="bg-slate-800 border-b border-slate-700 px-4 py-4">
-      <h1 class="text-xl font-bold text-emerald-400">Trackd</h1>
+      <div class="flex items-center justify-between">
+        <div class="w-20"></div>
+        <h1 class="text-xl font-bold text-emerald-400">Trackd</h1>
+        <div class="flex items-center gap-3 w-20 justify-end">
+          <button
+            @click="router.push('/goals')"
+            class="text-slate-400 hover:text-white p-1"
+            title="Goals"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+            </svg>
+          </button>
+          <button
+            @click="auth.signOut()"
+            class="text-slate-400 hover:text-white p-1"
+            title="Sign Out"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+          </button>
+        </div>
+      </div>
     </header>
 
     <TabNav />

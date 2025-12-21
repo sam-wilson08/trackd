@@ -14,6 +14,7 @@ const showForm = ref(false)
 
 // Form fields
 const description = ref('')
+const reward = ref('')
 const targetDate = ref('')
 const isSubmitting = ref(false)
 
@@ -22,6 +23,7 @@ const editingId = ref<string | null>(null)
 
 function resetForm() {
   description.value = ''
+  reward.value = ''
   targetDate.value = ''
   editingId.value = null
 }
@@ -29,6 +31,7 @@ function resetForm() {
 function startEdit(goal: Goal) {
   editingId.value = goal.id
   description.value = goal.description
+  reward.value = goal.reward || ''
   targetDate.value = goal.target_date
   showForm.value = true
 }
@@ -79,11 +82,13 @@ const sortedGoals = computed(() => {
 const activeGoals = computed(() => goals.value.filter((g) => !g.completed_at))
 
 async function loadGoals() {
+  if (!auth.user?.id) return
   isLoading.value = true
   try {
     const { data, error } = await supabase
       .from('goals')
       .select('*')
+      .eq('user_id', auth.user.id)
       .order('target_date', { ascending: true })
 
     if (error) throw error
@@ -105,6 +110,7 @@ async function submitGoal() {
         .from('goals')
         .update({
           description: description.value.trim(),
+          reward: reward.value.trim() || null,
           target_date: targetDate.value,
         })
         .eq('id', editingId.value)
@@ -114,6 +120,7 @@ async function submitGoal() {
       const { error } = await supabase.from('goals').insert({
         user_id: auth.user.id,
         description: description.value.trim(),
+        reward: reward.value.trim() || null,
         target_date: targetDate.value,
       } as Goal)
 
@@ -165,13 +172,26 @@ onMounted(() => {
 <template>
   <div class="min-h-screen bg-slate-900 text-white">
     <header class="bg-slate-800 border-b border-slate-700 px-4 py-4">
-      <div class="flex items-center gap-3">
-        <button @click="router.push('/')" class="text-slate-400 hover:text-white">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
+      <div class="flex items-center justify-between">
+        <div class="w-20">
+          <button @click="router.push('/')" class="text-slate-400 hover:text-white">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+        </div>
         <h1 class="text-xl font-bold text-emerald-400">Goals</h1>
+        <div class="w-20 flex justify-end">
+          <button
+            @click="auth.signOut()"
+            class="text-slate-400 hover:text-white p-1"
+            title="Sign Out"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+          </button>
+        </div>
       </div>
     </header>
 
@@ -202,6 +222,16 @@ onMounted(() => {
               v-model="description"
               type="text"
               placeholder="e.g. Lose 10 lbs, Run a 5K"
+              class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-slate-300 mb-2">Reward</label>
+            <input
+              v-model="reward"
+              type="text"
+              placeholder="e.g. New trainers, Spa day"
               class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
           </div>
@@ -282,6 +312,9 @@ onMounted(() => {
                   :class="goal.completed_at ? 'line-through text-slate-400' : ''"
                 >
                   {{ goal.description }}
+                </p>
+                <p v-if="goal.reward" class="text-sm text-amber-400 mt-1">
+                  Reward: {{ goal.reward }}
                 </p>
                 <p class="text-sm text-slate-500 mt-1">
                   Target: {{ formatDate(goal.target_date) }}

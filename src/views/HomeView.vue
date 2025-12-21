@@ -34,10 +34,12 @@ const goals = ref<Goal[]>([])
 
 // Load active goals
 async function loadGoals() {
+  if (!auth.user?.id) return
   try {
     const { data, error } = await supabase
       .from('goals')
       .select('*')
+      .eq('user_id', auth.user.id)
       .is('completed_at', null)
       .order('target_date', { ascending: true })
 
@@ -66,6 +68,7 @@ function getGoalProgress(goal: Goal): { daysLeft: number; progress: number } {
 
 // Load today's protein intake
 async function loadTodayProtein() {
+  if (!auth.user?.id) return
   try {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
@@ -75,6 +78,7 @@ async function loadTodayProtein() {
     const { data, error } = await supabase
       .from('protein_intake')
       .select('grams')
+      .eq('user_id', auth.user.id)
       .gte('recorded_at', today.toISOString())
       .lt('recorded_at', tomorrow.toISOString())
 
@@ -128,31 +132,16 @@ const dataSubtitle = computed(() => {
   return `Fat ${fatTrend}lbs, Muscle ${muscleTrend}lbs`
 })
 
-// Dummy data for initial display
-const dummyData = [
-  { date: '2024-11-01', fatSt: 3, fatLbs: 0, muscleSt: 9, muscleLbs: 0 },
-  { date: '2024-11-15', fatSt: 2, fatLbs: 12, muscleSt: 9, muscleLbs: 2 },
-  { date: '2024-12-01', fatSt: 2, fatLbs: 10, muscleSt: 9, muscleLbs: 4 },
-  { date: '2024-12-15', fatSt: 2, fatLbs: 8, muscleSt: 9, muscleLbs: 6 },
-  { date: '2025-01-01', fatSt: 2, fatLbs: 7, muscleSt: 9, muscleLbs: 8 },
-]
-
 const chartData = computed(() => {
-  const dataSource = metrics.value.length > 0
-    ? metrics.value.map((m) => ({
-        date: new Date(m.recorded_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
-        fatSt: m.fat_st || 0,
-        fatLbs: m.fat_lbs || 0,
-        muscleSt: m.muscle_st || 0,
-        muscleLbs: m.muscle_lbs || 0,
-      }))
-    : dummyData.map((d) => ({
-        date: new Date(d.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
-        fatSt: d.fatSt,
-        fatLbs: d.fatLbs,
-        muscleSt: d.muscleSt,
-        muscleLbs: d.muscleLbs,
-      }))
+  if (metrics.value.length === 0) return { labels: [], datasets: [] }
+
+  const dataSource = metrics.value.map((m) => ({
+    date: new Date(m.recorded_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
+    fatSt: m.fat_st || 0,
+    fatLbs: m.fat_lbs || 0,
+    muscleSt: m.muscle_st || 0,
+    muscleLbs: m.muscle_lbs || 0,
+  }))
 
   const labels = dataSource.map((d) => d.date)
   const data = dataSource.map((d) =>
@@ -224,10 +213,12 @@ const chartOptions = computed(() => {
 })
 
 async function loadMetrics() {
+  if (!auth.user?.id) return
   try {
     const { data, error } = await supabase
       .from('body_metrics')
       .select('*')
+      .eq('user_id', auth.user.id)
       .order('recorded_at', { ascending: true })
 
     if (error) throw error
@@ -263,54 +254,55 @@ function generateGreeting() {
   const now = new Date()
   const hour = now.getHours()
   const day = now.getDay()
+  const name = auth.firstName || 'there'
 
   // Time-based greetings
   const morningGreetings = [
-    'Good morning, Sam!',
-    'Morning, Sam!',
-    'Rise and shine, Sam!',
-    'Top of the morning, Sam!',
+    `Good morning, ${name}!`,
+    `Morning, ${name}!`,
+    `Rise and shine, ${name}!`,
+    `Top of the morning, ${name}!`,
   ]
 
   const afternoonGreetings = [
-    'Good afternoon, Sam!',
-    'Afternoon, Sam!',
-    'Hope your day is going well, Sam!',
+    `Good afternoon, ${name}!`,
+    `Afternoon, ${name}!`,
+    `Hope your day is going well, ${name}!`,
   ]
 
   const eveningGreetings = [
-    'Good evening, Sam!',
-    'Evening, Sam!',
-    'Hope you had a great day, Sam!',
+    `Good evening, ${name}!`,
+    `Evening, ${name}!`,
+    `Hope you had a great day, ${name}!`,
   ]
 
   // Day-specific greetings
   const mondayGreetings = [
-    'Happy Monday, Sam!',
-    'New week, new gains, Sam!',
-    'Let\'s crush this week, Sam!',
+    `Happy Monday, ${name}!`,
+    `New week, new gains, ${name}!`,
+    `Let's crush this week, ${name}!`,
   ]
 
   const fridayGreetings = [
-    'Happy Friday, Sam!',
-    'TGIF, Sam!',
-    'Weekend\'s almost here, Sam!',
-    'Friday vibes, Sam!',
+    `Happy Friday, ${name}!`,
+    `TGIF, ${name}!`,
+    `Weekend's almost here, ${name}!`,
+    `Friday vibes, ${name}!`,
   ]
 
   const weekendGreetings = [
-    'Happy weekend, Sam!',
-    'Enjoy your weekend, Sam!',
-    'Weekend mode, Sam!',
+    `Happy weekend, ${name}!`,
+    `Enjoy your weekend, ${name}!`,
+    `Weekend mode, ${name}!`,
   ]
 
   // Generic greetings (fallback variety)
   const genericGreetings = [
-    'Hey Sam!',
-    'Hi Sam!',
-    'What\'s up, Sam!',
-    'Hey there, Sam!',
-    'Welcome back, Sam!',
+    `Hey ${name}!`,
+    `Hi ${name}!`,
+    `What's up, ${name}!`,
+    `Hey there, ${name}!`,
+    `Welcome back, ${name}!`,
   ]
 
   // Pick from appropriate pool
@@ -378,9 +370,12 @@ onUnmounted(() => {
           </button>
           <button
             @click="auth.signOut()"
-            class="text-slate-400 hover:text-white text-sm"
+            class="text-slate-400 hover:text-white p-1"
+            title="Sign Out"
           >
-            Sign Out
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
           </button>
         </div>
       </div>
@@ -453,16 +448,20 @@ onUnmounted(() => {
                 :style="{ width: `${getGoalProgress(goal).progress}%` }"
               />
             </div>
-            <p class="text-xs mt-2" :class="getGoalProgress(goal).daysLeft <= 0 ? 'text-red-400' : 'text-slate-500'">
-              <template v-if="getGoalProgress(goal).daysLeft > 0">
-                {{ getGoalProgress(goal).daysLeft }} days remaining
-              </template>
-              <template v-else-if="getGoalProgress(goal).daysLeft === 0">
-                Due today!
-              </template>
-              <template v-else>
-                {{ Math.abs(getGoalProgress(goal).daysLeft) }} days overdue
-              </template>
+            <p class="text-xs mt-2">
+              <span v-if="goal.reward" class="text-amber-400">{{ goal.reward }}</span>
+              <span v-if="goal.reward" class="text-slate-500"> - </span>
+              <span :class="getGoalProgress(goal).daysLeft <= 0 ? 'text-red-400' : 'text-slate-500'">
+                <template v-if="getGoalProgress(goal).daysLeft > 0">
+                  {{ getGoalProgress(goal).daysLeft }} days remaining
+                </template>
+                <template v-else-if="getGoalProgress(goal).daysLeft === 0">
+                  Due today!
+                </template>
+                <template v-else>
+                  {{ Math.abs(getGoalProgress(goal).daysLeft) }} days overdue
+                </template>
+              </span>
             </p>
           </div>
         </div>

@@ -243,6 +243,7 @@ export interface Database {
           id: string
           user_id: string
           description: string
+          reward: string | null
           target_date: string
           created_at: string
           completed_at: string | null
@@ -251,6 +252,7 @@ export interface Database {
           id?: string
           user_id: string
           description: string
+          reward?: string | null
           target_date: string
           created_at?: string
           completed_at?: string | null
@@ -259,6 +261,7 @@ export interface Database {
           id?: string
           user_id?: string
           description?: string
+          reward?: string | null
           target_date?: string
           created_at?: string
           completed_at?: string | null
