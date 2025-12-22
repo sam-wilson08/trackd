@@ -15,12 +15,20 @@ import {
 import TabNav from '@/components/TabNav.vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import { useToastStore } from '@/stores/toast'
+import { useSettingsStore } from '@/stores/settings'
 import type { BodyMetric } from '@/lib/database.types'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import LoadingSpinner from '@/components/LoadingSpinner.vue'
+import EmptyState from '@/components/EmptyState.vue'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend)
 
 const router = useRouter()
 const auth = useAuthStore()
+const toast = useToastStore()
+const settings = useSettingsStore()
+const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null)
 
 const metrics = ref<BodyMetric[]>([])
 const isLoading = ref(true)
@@ -238,11 +246,13 @@ async function submitMetric() {
         .eq('id', editingId.value)
 
       if (error) throw error
+      toast.success('Entry updated!')
     } else {
       // Insert new
       const { error } = await supabase.from('body_metrics').insert(metricData as BodyMetric)
 
       if (error) throw error
+      toast.success('Entry saved!')
     }
 
     // Reset form and reload
@@ -251,19 +261,31 @@ async function submitMetric() {
     await loadMetrics()
   } catch (e) {
     console.error('Failed to save metric:', e)
+    toast.error('Failed to save entry')
   } finally {
     isSubmitting.value = false
   }
 }
 
 async function deleteMetric(id: string) {
+  const confirmed = await confirmDialog.value?.open({
+    title: 'Delete Entry',
+    message: 'Are you sure you want to delete this weigh-in? This action cannot be undone.',
+    confirmText: 'Delete',
+    destructive: true,
+  })
+
+  if (!confirmed) return
+
   try {
     const { error } = await supabase.from('body_metrics').delete().eq('id', id)
 
     if (error) throw error
     await loadMetrics()
+    toast.success('Entry deleted')
   } catch (e) {
     console.error('Failed to delete metric:', e)
+    toast.error('Failed to delete entry')
   }
 }
 
@@ -458,11 +480,14 @@ const sortedMetrics = computed(() => {
       <section>
         <h3 class="text-lg font-semibold mb-3 text-slate-300">History</h3>
 
-        <div v-if="isLoading" class="text-center py-8 text-slate-500">Loading...</div>
+        <LoadingSpinner v-if="isLoading" text="Loading entries..." />
 
-        <div v-else-if="sortedMetrics.length === 0" class="text-center py-8 text-slate-500">
-          No weigh-ins yet. Add your first one above.
-        </div>
+        <EmptyState
+          v-else-if="sortedMetrics.length === 0"
+          icon="data"
+          title="No weigh-ins yet"
+          description="Track your body composition by adding your first entry"
+        />
 
         <div v-else class="space-y-2">
           <div
@@ -516,5 +541,7 @@ const sortedMetrics = computed(() => {
         </div>
       </section>
     </main>
+
+    <ConfirmDialog ref="confirmDialog" />
   </div>
 </template>

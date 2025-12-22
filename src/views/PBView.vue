@@ -1,13 +1,22 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import TabNav from '@/components/TabNav.vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import { useToastStore } from '@/stores/toast'
 import type { PersonalBest, PersonalBestRecord } from '@/lib/database.types'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import LoadingSpinner from '@/components/LoadingSpinner.vue'
+import EmptyState from '@/components/EmptyState.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
+const toast = useToastStore()
+const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null)
+
+// Sort options
+const sortBy = ref<'date' | 'name'>('date')
 
 const personalBests = ref<(PersonalBest & { latestRecord?: PersonalBestRecord })[]>([])
 const isLoading = ref(true)
@@ -53,6 +62,16 @@ async function loadPersonalBests() {
   }
 }
 
+// Sorted PBs
+const sortedPBs = computed(() => {
+  return [...personalBests.value].sort((a, b) => {
+    if (sortBy.value === 'name') {
+      return a.name.localeCompare(b.name)
+    }
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  })
+})
+
 async function createPB() {
   if (!auth.user?.id || !newPBName.value.trim()) return
   isSubmitting.value = true
@@ -68,21 +87,34 @@ async function createPB() {
     newPBName.value = ''
     showForm.value = false
     await loadPersonalBests()
+    toast.success('Personal best created!')
   } catch (e) {
     console.error('Failed to create personal best:', e)
+    toast.error('Failed to create personal best')
   } finally {
     isSubmitting.value = false
   }
 }
 
 async function deletePB(id: string) {
+  const confirmed = await confirmDialog.value?.open({
+    title: 'Delete Personal Best',
+    message: 'Are you sure? This will also delete all records for this exercise.',
+    confirmText: 'Delete',
+    destructive: true,
+  })
+
+  if (!confirmed) return
+
   try {
     const { error } = await supabase.from('personal_bests').delete().eq('id', id)
 
     if (error) throw error
     await loadPersonalBests()
+    toast.success('Personal best deleted')
   } catch (e) {
     console.error('Failed to delete personal best:', e)
+    toast.error('Failed to delete personal best')
   }
 }
 
@@ -123,7 +155,16 @@ onMounted(() => {
     <TabNav />
 
     <main class="p-4">
-      <h2 class="text-2xl font-bold mb-4">Personal Bests</h2>
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-2xl font-bold">Personal Bests</h2>
+        <select
+          v-model="sortBy"
+          class="bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+        >
+          <option value="date">Sort by Date</option>
+          <option value="name">Sort by Name</option>
+        </select>
+      </div>
 
       <!-- Add PB button -->
       <button
@@ -167,17 +208,20 @@ onMounted(() => {
       </div>
 
       <!-- Loading state -->
-      <div v-if="isLoading" class="text-center py-8 text-slate-500">Loading...</div>
+      <LoadingSpinner v-if="isLoading" text="Loading personal bests..." />
 
       <!-- Empty state -->
-      <div v-else-if="personalBests.length === 0" class="text-center py-8 text-slate-500">
-        No personal bests yet. Add your first one above.
-      </div>
+      <EmptyState
+        v-else-if="personalBests.length === 0"
+        icon="pb"
+        title="No personal bests yet"
+        description="Start tracking your lifting progress by adding your first exercise"
+      />
 
       <!-- PB list -->
       <div v-else class="space-y-3">
         <div
-          v-for="pb in personalBests"
+          v-for="pb in sortedPBs"
           :key="pb.id"
           class="bg-slate-800 rounded-xl p-4"
         >
@@ -208,5 +252,7 @@ onMounted(() => {
         </div>
       </div>
     </main>
+
+    <ConfirmDialog ref="confirmDialog" />
   </div>
 </template>

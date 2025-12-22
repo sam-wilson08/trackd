@@ -13,6 +13,7 @@ import {
   Legend,
 } from 'chart.js'
 import { useAuthStore } from '@/stores/auth'
+import { useSettingsStore } from '@/stores/settings'
 import { supabase } from '@/lib/supabase'
 import TabNav from '@/components/TabNav.vue'
 import type { BodyMetric, ProteinIntake, Goal } from '@/lib/database.types'
@@ -21,16 +22,88 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 
 const router = useRouter()
 const auth = useAuthStore()
+const settings = useSettingsStore()
 
 // Body metrics for chart
 const metrics = ref<BodyMetric[]>([])
 const activeGraph = ref<'fat' | 'muscle'>('fat')
 
-// Protein intake for today
+// Protein intake for today and this week
 const todayProtein = ref<number | null>(null)
+const allProteinIntakes = ref<ProteinIntake[]>([])
 
 // Goals
 const goals = ref<Goal[]>([])
+
+// Calculate protein streak (consecutive days meeting goal)
+const proteinStreak = computed(() => {
+  if (allProteinIntakes.value.length === 0) return 0
+
+  // Group by date
+  const dailyTotals: { [dateKey: string]: number } = {}
+  allProteinIntakes.value.forEach(intake => {
+    const date = new Date(intake.recorded_at)
+    const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+    dailyTotals[dateKey] = (dailyTotals[dateKey] || 0) + intake.grams
+  })
+
+  // Count consecutive days from yesterday backwards
+  let streak = 0
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  // Check if today's goal is met
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  if ((dailyTotals[todayKey] || 0) >= settings.proteinGoal) {
+    streak++
+  }
+
+  // Count backwards from yesterday
+  for (let i = 1; i <= 365; i++) {
+    const checkDate = new Date(today)
+    checkDate.setDate(checkDate.getDate() - i)
+    const dateKey = `${checkDate.getFullYear()}-${String(checkDate.getMonth() + 1).padStart(2, '0')}-${String(checkDate.getDate()).padStart(2, '0')}`
+
+    if ((dailyTotals[dateKey] || 0) >= settings.proteinGoal) {
+      streak++
+    } else {
+      break
+    }
+  }
+
+  return streak
+})
+
+// Weekly summary
+const weeklyStats = computed(() => {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const weekAgo = new Date(today)
+  weekAgo.setDate(weekAgo.getDate() - 7)
+
+  // Count weigh-ins this week
+  const weighInsThisWeek = metrics.value.filter(m => {
+    const date = new Date(m.recorded_at)
+    return date >= weekAgo && date <= today
+  }).length
+
+  // Count days protein goal met this week
+  const dailyTotals: { [dateKey: string]: number } = {}
+  allProteinIntakes.value.forEach(intake => {
+    const date = new Date(intake.recorded_at)
+    if (date >= weekAgo && date <= today) {
+      const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+      dailyTotals[dateKey] = (dailyTotals[dateKey] || 0) + intake.grams
+    }
+  })
+
+  const daysProteinGoalMet = Object.values(dailyTotals).filter(total => total >= settings.proteinGoal).length
+
+  return {
+    weighIns: weighInsThisWeek,
+    proteinDays: daysProteinGoalMet,
+  }
+})
 
 // Load active goals
 async function loadGoals() {
@@ -66,27 +139,33 @@ function getGoalProgress(goal: Goal): { daysLeft: number; progress: number } {
   return { daysLeft, progress }
 }
 
-// Load today's protein intake
-async function loadTodayProtein() {
+// Load protein intake (all for streak, filtered for today)
+async function loadProteinData() {
   if (!auth.user?.id) return
   try {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const tomorrow = new Date(today)
-    tomorrow.setDate(tomorrow.getDate() + 1)
-
+    // Load all intakes for streak calculation
     const { data, error } = await supabase
       .from('protein_intake')
-      .select('grams')
+      .select('*')
       .eq('user_id', auth.user.id)
-      .gte('recorded_at', today.toISOString())
-      .lt('recorded_at', tomorrow.toISOString())
+      .order('recorded_at', { ascending: false })
 
     if (error) throw error
 
-    const intakes = (data ?? []) as ProteinIntake[]
-    todayProtein.value = intakes.length > 0
-      ? intakes.reduce((sum, i) => sum + i.grams, 0)
+    allProteinIntakes.value = (data ?? []) as ProteinIntake[]
+
+    // Calculate today's total
+    const today = new Date()
+    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+
+    const todayIntakes = allProteinIntakes.value.filter(intake => {
+      const date = new Date(intake.recorded_at)
+      const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+      return dateKey === todayKey
+    })
+
+    todayProtein.value = todayIntakes.length > 0
+      ? todayIntakes.reduce((sum, i) => sum + i.grams, 0)
       : null
   } catch (e) {
     console.error('Failed to load protein intake:', e)
@@ -340,7 +419,7 @@ onMounted(async () => {
     currentDateTime.value = new Date()
   }, 60000)
   await loadMetrics()
-  await loadTodayProtein()
+  await loadProteinData()
   await loadGoals()
 })
 
@@ -358,7 +437,7 @@ onUnmounted(() => {
       <div class="flex items-center justify-between">
         <div class="w-20"></div>
         <h1 class="text-xl font-bold text-emerald-400">Trackd</h1>
-        <div class="flex items-center gap-3 w-20 justify-end">
+        <div class="flex items-center gap-2 w-20 justify-end">
           <button
             @click="router.push('/goals')"
             class="text-slate-400 hover:text-white p-1"
@@ -369,12 +448,13 @@ onUnmounted(() => {
             </svg>
           </button>
           <button
-            @click="auth.signOut()"
+            @click="router.push('/settings')"
             class="text-slate-400 hover:text-white p-1"
-            title="Sign Out"
+            title="Settings"
           >
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
           </button>
         </div>
@@ -390,7 +470,23 @@ onUnmounted(() => {
       <p class="text-2xl font-semibold text-slate-300 mb-4">{{ formattedTime() }}</p>
 
       <!-- Greeting -->
-      <h2 class="text-4xl font-bold mb-6">{{ greeting }}</h2>
+      <h2 class="text-4xl font-bold mb-4">{{ greeting }}</h2>
+
+      <!-- Weekly stats & streak -->
+      <div class="grid grid-cols-3 gap-3 mb-6">
+        <div class="bg-slate-800 rounded-xl p-3 text-center">
+          <p class="text-2xl font-bold text-emerald-400">{{ weeklyStats.proteinDays }}/7</p>
+          <p class="text-xs text-slate-500">Protein days</p>
+        </div>
+        <div class="bg-slate-800 rounded-xl p-3 text-center">
+          <p class="text-2xl font-bold text-amber-400">{{ proteinStreak }}</p>
+          <p class="text-xs text-slate-500">Day streak</p>
+        </div>
+        <div class="bg-slate-800 rounded-xl p-3 text-center">
+          <p class="text-2xl font-bold text-blue-400">{{ weeklyStats.weighIns }}</p>
+          <p class="text-xs text-slate-500">Weigh-ins</p>
+        </div>
+      </div>
 
       <!-- Body metrics chart -->
       <div class="bg-slate-800 rounded-xl p-4 mb-6">

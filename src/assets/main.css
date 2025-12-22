@@ -3,3 +3,55 @@
 html, body {
   background-color: #10b981;
 }
+
+/* Light theme overrides */
+.light-theme {
+  --bg-primary: #f8fafc;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f1f5f9;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --border-color: #e2e8f0;
+}
+
+.light-theme .bg-slate-900 {
+  background-color: var(--bg-primary);
+}
+
+.light-theme .bg-slate-800 {
+  background-color: var(--bg-secondary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.light-theme .bg-slate-700 {
+  background-color: var(--bg-tertiary);
+}
+
+.light-theme .text-white {
+  color: var(--text-primary);
+}
+
+.light-theme .text-slate-300,
+.light-theme .text-slate-400 {
+  color: var(--text-secondary);
+}
+
+.light-theme .text-slate-500 {
+  color: #64748b;
+}
+
+.light-theme .border-slate-700,
+.light-theme .border-slate-600 {
+  border-color: var(--border-color);
+}
+
+.light-theme input,
+.light-theme select {
+  background-color: var(--bg-tertiary) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
+}
+
+.light-theme input::placeholder {
+  color: #94a3b8 !important;
+}

@@ -3,10 +3,19 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import { useToastStore } from '@/stores/toast'
 import type { Goal } from '@/lib/database.types'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import LoadingSpinner from '@/components/LoadingSpinner.vue'
+import EmptyState from '@/components/EmptyState.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
+const toast = useToastStore()
+const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null)
+
+// Sort options
+const sortBy = ref<'date' | 'name'>('date')
 
 const goals = ref<Goal[]>([])
 const isLoading = ref(true)
@@ -66,11 +75,16 @@ function formatDate(dateStr: string) {
   })
 }
 
-// Sort goals: active first (by target date), then completed
+// Sort goals: active first (by target date or name), then completed
 const sortedGoals = computed(() => {
   const active = goals.value
     .filter((g) => !g.completed_at)
-    .sort((a, b) => new Date(a.target_date).getTime() - new Date(b.target_date).getTime())
+    .sort((a, b) => {
+      if (sortBy.value === 'name') {
+        return a.description.localeCompare(b.description)
+      }
+      return new Date(a.target_date).getTime() - new Date(b.target_date).getTime()
+    })
 
   const completed = goals.value
     .filter((g) => g.completed_at)
@@ -116,6 +130,7 @@ async function submitGoal() {
         .eq('id', editingId.value)
 
       if (error) throw error
+      toast.success('Goal updated!')
     } else {
       const { error } = await supabase.from('goals').insert({
         user_id: auth.user.id,
@@ -125,6 +140,7 @@ async function submitGoal() {
       } as Goal)
 
       if (error) throw error
+      toast.success('Goal created!')
     }
 
     resetForm()
@@ -132,6 +148,7 @@ async function submitGoal() {
     await loadGoals()
   } catch (e) {
     console.error('Failed to save goal:', e)
+    toast.error('Failed to save goal')
   } finally {
     isSubmitting.value = false
   }
@@ -139,6 +156,7 @@ async function submitGoal() {
 
 async function toggleComplete(goal: Goal) {
   try {
+    const isCompleting = !goal.completed_at
     const { error } = await supabase
       .from('goals')
       .update({
@@ -148,19 +166,32 @@ async function toggleComplete(goal: Goal) {
 
     if (error) throw error
     await loadGoals()
+    toast.success(isCompleting ? 'Goal completed!' : 'Goal reopened')
   } catch (e) {
     console.error('Failed to update goal:', e)
+    toast.error('Failed to update goal')
   }
 }
 
 async function deleteGoal(id: string) {
+  const confirmed = await confirmDialog.value?.open({
+    title: 'Delete Goal',
+    message: 'Are you sure you want to delete this goal? This action cannot be undone.',
+    confirmText: 'Delete',
+    destructive: true,
+  })
+
+  if (!confirmed) return
+
   try {
     const { error } = await supabase.from('goals').delete().eq('id', id)
 
     if (error) throw error
     await loadGoals()
+    toast.success('Goal deleted')
   } catch (e) {
     console.error('Failed to delete goal:', e)
+    toast.error('Failed to delete goal')
   }
 }
 
@@ -198,8 +229,19 @@ onMounted(() => {
     <main class="p-4">
       <!-- Summary -->
       <div class="bg-slate-800 rounded-xl p-4 mb-4">
-        <p class="text-sm text-slate-400 mb-1">Active Goals</p>
-        <p class="text-3xl font-bold text-emerald-400">{{ activeGoals.length }}</p>
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm text-slate-400 mb-1">Active Goals</p>
+            <p class="text-3xl font-bold text-emerald-400">{{ activeGoals.length }}</p>
+          </div>
+          <select
+            v-model="sortBy"
+            class="bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          >
+            <option value="date">Sort by Date</option>
+            <option value="name">Sort by Name</option>
+          </select>
+        </div>
       </div>
 
       <!-- Add goal button -->
@@ -264,12 +306,15 @@ onMounted(() => {
       </div>
 
       <!-- Loading state -->
-      <div v-if="isLoading" class="text-center py-8 text-slate-500">Loading...</div>
+      <LoadingSpinner v-if="isLoading" text="Loading goals..." />
 
       <!-- Empty state -->
-      <div v-else-if="goals.length === 0" class="text-center py-8 text-slate-500">
-        No goals yet. Add your first one above.
-      </div>
+      <EmptyState
+        v-else-if="goals.length === 0"
+        icon="goals"
+        title="No goals yet"
+        description="Set your first goal to start tracking your progress"
+      />
 
       <!-- Goals list -->
       <div v-else class="space-y-3">
@@ -366,5 +411,7 @@ onMounted(() => {
         </div>
       </div>
     </main>
+
+    <ConfirmDialog ref="confirmDialog" />
   </div>
 </template>

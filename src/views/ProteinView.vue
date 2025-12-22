@@ -4,41 +4,59 @@ import { useRouter } from 'vue-router'
 import TabNav from '@/components/TabNav.vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
+import { useToastStore } from '@/stores/toast'
+import { useSettingsStore } from '@/stores/settings'
 import type { ProteinIntake } from '@/lib/database.types'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import LoadingSpinner from '@/components/LoadingSpinner.vue'
 
 const router = useRouter()
 
 const auth = useAuthStore()
+const toast = useToastStore()
+const settings = useSettingsStore()
+const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null)
 
 const intakes = ref<ProteinIntake[]>([])
 const isLoading = ref(true)
 const showForm = ref(false)
 const grams = ref('')
 const isSubmitting = ref(false)
+const editingId = ref<string | null>(null)
 
-// Protein goal (stored in localStorage for now)
-const proteinGoal = ref(150)
+// Protein goal from settings
 const showGoalEdit = ref(false)
 const newGoal = ref('')
 
 // Calendar state
 const currentMonth = ref(new Date())
 
-// Load protein goal from localStorage
-function loadGoal() {
-  const saved = localStorage.getItem('proteinGoal')
-  if (saved) {
-    proteinGoal.value = parseInt(saved)
-  }
-}
+// Use settings for protein goal
+const proteinGoal = computed(() => settings.proteinGoal)
 
 function saveGoal() {
   if (newGoal.value) {
-    proteinGoal.value = parseInt(newGoal.value)
-    localStorage.setItem('proteinGoal', proteinGoal.value.toString())
+    settings.setProteinGoal(parseInt(newGoal.value))
+    toast.success('Goal updated!')
   }
   showGoalEdit.value = false
   newGoal.value = ''
+}
+
+function resetForm() {
+  grams.value = ''
+  editingId.value = null
+}
+
+function startEdit(intake: ProteinIntake) {
+  editingId.value = intake.id
+  grams.value = intake.grams.toString()
+  showForm.value = true
+}
+
+function cancelEdit() {
+  resetForm()
+  showForm.value = false
 }
 
 // Calendar helpers
@@ -184,25 +202,72 @@ async function submitIntake() {
   isSubmitting.value = true
 
   try {
-    const { error } = await supabase.from('protein_intake').insert({
-      user_id: auth.user.id,
-      grams: parseInt(grams.value),
-    } as ProteinIntake)
+    if (editingId.value) {
+      const { error } = await supabase
+        .from('protein_intake')
+        .update({ grams: parseInt(grams.value) })
+        .eq('id', editingId.value)
 
-    if (error) throw error
+      if (error) throw error
+      toast.success('Entry updated!')
+    } else {
+      const { error } = await supabase.from('protein_intake').insert({
+        user_id: auth.user.id,
+        grams: parseInt(grams.value),
+      } as ProteinIntake)
 
-    grams.value = ''
+      if (error) throw error
+      toast.success('Protein logged!')
+    }
+
+    resetForm()
     showForm.value = false
     await loadIntakes()
   } catch (e) {
     console.error('Failed to save protein intake:', e)
+    toast.error('Failed to save entry')
   } finally {
     isSubmitting.value = false
   }
 }
 
+async function deleteIntake(id: string) {
+  const confirmed = await confirmDialog.value?.open({
+    title: 'Delete Entry',
+    message: 'Are you sure you want to delete this protein entry?',
+    confirmText: 'Delete',
+    destructive: true,
+  })
+
+  if (!confirmed) return
+
+  try {
+    const { error } = await supabase.from('protein_intake').delete().eq('id', id)
+
+    if (error) throw error
+    await loadIntakes()
+    toast.success('Entry deleted')
+  } catch (e) {
+    console.error('Failed to delete entry:', e)
+    toast.error('Failed to delete entry')
+  }
+}
+
+// Get today's entries for the list
+const todayEntries = computed(() => {
+  const today = new Date()
+  const dateKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+
+  return intakes.value
+    .filter(intake => {
+      const date = new Date(intake.recorded_at)
+      const intakeKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+      return intakeKey === dateKey
+    })
+    .sort((a, b) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime())
+})
+
 onMounted(() => {
-  loadGoal()
   loadIntakes()
 })
 </script>
@@ -303,7 +368,7 @@ onMounted(() => {
 
       <!-- Entry form -->
       <div v-if="showForm" class="bg-slate-800 rounded-xl p-4 mb-4">
-        <h2 class="font-semibold mb-4">Add Protein</h2>
+        <h2 class="font-semibold mb-4">{{ editingId ? 'Edit Protein' : 'Add Protein' }}</h2>
 
         <div class="mb-4">
           <label class="block text-sm font-medium text-slate-300 mb-2">Amount (grams)</label>
@@ -318,7 +383,7 @@ onMounted(() => {
 
         <div class="flex gap-2">
           <button
-            @click="showForm = false"
+            @click="cancelEdit"
             class="flex-1 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors"
           >
             Cancel
@@ -330,6 +395,33 @@ onMounted(() => {
           >
             {{ isSubmitting ? 'Saving...' : 'Save' }}
           </button>
+        </div>
+      </div>
+
+      <!-- Today's entries -->
+      <div v-if="todayEntries.length > 0" class="bg-slate-800 rounded-xl p-4 mb-4">
+        <h3 class="text-sm font-medium text-slate-400 mb-3">Today's Entries</h3>
+        <div class="space-y-2">
+          <div
+            v-for="entry in todayEntries"
+            :key="entry.id"
+            class="flex items-center justify-between py-2 border-b border-slate-700 last:border-0"
+          >
+            <button @click="startEdit(entry)" class="flex-1 text-left">
+              <span class="font-medium">{{ entry.grams }}g</span>
+              <span class="text-xs text-slate-500 ml-2">
+                {{ new Date(entry.recorded_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) }}
+              </span>
+            </button>
+            <button
+              @click="deleteIntake(entry.id)"
+              class="text-slate-500 hover:text-red-400 transition-colors p-1"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -369,7 +461,7 @@ onMounted(() => {
         </div>
 
         <!-- Calendar grid -->
-        <div v-if="isLoading" class="text-center py-8 text-slate-500">Loading...</div>
+        <LoadingSpinner v-if="isLoading" size="sm" />
         <div v-else class="grid grid-cols-7 gap-1">
           <div
             v-for="(day, index) in calendarDays"
@@ -412,5 +504,7 @@ onMounted(() => {
         </div>
       </div>
     </main>
+
+    <ConfirmDialog ref="confirmDialog" />
   </div>
 </template>
