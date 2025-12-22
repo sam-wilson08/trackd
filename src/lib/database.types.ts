@@ -132,6 +132,8 @@ export interface Database {
           id: string
           user_id: string
           recorded_at: string
+          weight_st: number | null
+          weight_lbs: number | null
           fat_st: number | null
           fat_lbs: number | null
           muscle_st: number | null
@@ -142,6 +144,8 @@ export interface Database {
           id?: string
           user_id: string
           recorded_at?: string
+          weight_st?: number | null
+          weight_lbs?: number | null
           fat_st?: number | null
           fat_lbs?: number | null
           muscle_st?: number | null
@@ -152,6 +156,8 @@ export interface Database {
           id?: string
           user_id?: string
           recorded_at?: string
+          weight_st?: number | null
+          weight_lbs?: number | null
           fat_st?: number | null
           fat_lbs?: number | null
           muscle_st?: number | null

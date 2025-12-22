@@ -33,9 +33,11 @@ const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null)
 const metrics = ref<BodyMetric[]>([])
 const isLoading = ref(true)
 const showForm = ref(false)
-const activeGraph = ref<'fat' | 'muscle'>('fat')
+const activeGraph = ref<'weight' | 'fat' | 'muscle'>('weight')
 
 // Form data
+const weightSt = ref('')
+const weightLbs = ref('')
 const fatSt = ref('')
 const fatLbs = ref('')
 const muscleSt = ref('')
@@ -54,6 +56,8 @@ function getTodayDate() {
 
 // Initialize date with today
 function resetForm() {
+  weightSt.value = ''
+  weightLbs.value = ''
   fatSt.value = ''
   fatLbs.value = ''
   muscleSt.value = ''
@@ -65,6 +69,8 @@ function resetForm() {
 // Start editing a metric
 function startEdit(metric: BodyMetric) {
   editingId.value = metric.id
+  weightSt.value = metric.weight_st?.toString() || ''
+  weightLbs.value = metric.weight_lbs?.toString() || ''
   fatSt.value = metric.fat_st?.toString() || ''
   fatLbs.value = metric.fat_lbs?.toString() || ''
   muscleSt.value = metric.muscle_st?.toString() || ''
@@ -95,7 +101,7 @@ function toTotalLbs(st: number | null, lbs: number | null): number {
 }
 
 // Get trend compared to previous entry (returns 'up', 'down', or 'same')
-function getTrend(currentIndex: number, type: 'fat' | 'muscle'): 'up' | 'down' | 'same' | null {
+function getTrend(currentIndex: number, type: 'weight' | 'fat' | 'muscle'): 'up' | 'down' | 'same' | null {
   // sortedMetrics is newest first, so previous entry is at currentIndex + 1
   if (currentIndex >= sortedMetrics.value.length - 1) return null
 
@@ -104,12 +110,19 @@ function getTrend(currentIndex: number, type: 'fat' | 'muscle'): 'up' | 'down' |
 
   if (!current || !previous) return null
 
-  const currentVal = type === 'fat'
-    ? toTotalLbs(current.fat_st, current.fat_lbs)
-    : toTotalLbs(current.muscle_st, current.muscle_lbs)
-  const previousVal = type === 'fat'
-    ? toTotalLbs(previous.fat_st, previous.fat_lbs)
-    : toTotalLbs(previous.muscle_st, previous.muscle_lbs)
+  let currentVal: number
+  let previousVal: number
+
+  if (type === 'weight') {
+    currentVal = toTotalLbs(current.weight_st, current.weight_lbs)
+    previousVal = toTotalLbs(previous.weight_st, previous.weight_lbs)
+  } else if (type === 'fat') {
+    currentVal = toTotalLbs(current.fat_st, current.fat_lbs)
+    previousVal = toTotalLbs(previous.fat_st, previous.fat_lbs)
+  } else {
+    currentVal = toTotalLbs(current.muscle_st, current.muscle_lbs)
+    previousVal = toTotalLbs(previous.muscle_st, previous.muscle_lbs)
+  }
 
   if (currentVal > previousVal) return 'up'
   if (currentVal < previousVal) return 'down'
@@ -121,6 +134,8 @@ const chartData = computed(() => {
 
   const dataSource = metrics.value.map((m) => ({
     date: new Date(m.recorded_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
+    weightSt: m.weight_st || 0,
+    weightLbs: m.weight_lbs || 0,
     fatSt: m.fat_st || 0,
     fatLbs: m.fat_lbs || 0,
     muscleSt: m.muscle_st || 0,
@@ -129,20 +144,30 @@ const chartData = computed(() => {
 
   const labels = dataSource.map((d) => d.date)
   // Convert to total lbs for graphing (1 stone = 14 lbs)
-  const data = dataSource.map((d) =>
-    activeGraph.value === 'fat'
-      ? d.fatSt * 14 + d.fatLbs
-      : d.muscleSt * 14 + d.muscleLbs
-  )
+  const data = dataSource.map((d) => {
+    if (activeGraph.value === 'weight') {
+      return d.weightSt * 14 + d.weightLbs
+    } else if (activeGraph.value === 'fat') {
+      return d.fatSt * 14 + d.fatLbs
+    } else {
+      return d.muscleSt * 14 + d.muscleLbs
+    }
+  })
+
+  const colors = {
+    weight: { border: '#60a5fa', bg: '#60a5fa33' },
+    fat: { border: '#f87171', bg: '#f8717133' },
+    muscle: { border: '#34d399', bg: '#34d39933' },
+  }
 
   return {
     labels,
     datasets: [
       {
-        label: activeGraph.value === 'fat' ? 'Fat' : 'Muscle',
+        label: activeGraph.value === 'weight' ? 'Weight' : activeGraph.value === 'fat' ? 'Fat' : 'Muscle',
         data,
-        borderColor: activeGraph.value === 'fat' ? '#f87171' : '#34d399',
-        backgroundColor: activeGraph.value === 'fat' ? '#f8717133' : '#34d39933',
+        borderColor: colors[activeGraph.value].border,
+        backgroundColor: colors[activeGraph.value].bg,
         tension: 0.3,
         fill: true,
       },
@@ -231,6 +256,8 @@ async function submitMetric() {
   try {
     const metricData = {
       user_id: auth.user.id,
+      weight_st: weightSt.value ? parseInt(weightSt.value) : null,
+      weight_lbs: weightLbs.value ? parseFloat(weightLbs.value) : null,
       fat_st: fatSt.value ? parseInt(fatSt.value) : null,
       fat_lbs: fatLbs.value ? parseFloat(fatLbs.value) : null,
       muscle_st: muscleSt.value ? parseInt(muscleSt.value) : null,
@@ -346,6 +373,17 @@ const sortedMetrics = computed(() => {
       <!-- Toggle buttons -->
       <div class="flex gap-2 mb-4">
         <button
+          @click="activeGraph = 'weight'"
+          class="flex-1 py-2 rounded-lg font-medium transition-colors"
+          :class="
+            activeGraph === 'weight'
+              ? 'bg-blue-500/20 text-blue-400 border border-blue-500/50'
+              : 'bg-slate-800 text-slate-400 border border-slate-700'
+          "
+        >
+          Weight
+        </button>
+        <button
           @click="activeGraph = 'fat'"
           class="flex-1 py-2 rounded-lg font-medium transition-colors"
           :class="
@@ -372,7 +410,7 @@ const sortedMetrics = computed(() => {
       <!-- Chart -->
       <div class="bg-slate-800 rounded-xl p-4 mb-4">
         <h2 class="text-sm font-medium text-slate-400 mb-3">
-          {{ activeGraph === 'fat' ? 'Fat Weight' : 'Muscle Weight' }} Over Time
+          {{ activeGraph === 'weight' ? 'Overall Weight' : activeGraph === 'fat' ? 'Fat Weight' : 'Muscle Weight' }} Over Time
         </h2>
         <div class="h-64">
           <Line :data="chartData" :options="chartOptions" />
@@ -404,6 +442,32 @@ const sortedMetrics = computed(() => {
               type="date"
               class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
+          </div>
+
+          <!-- Overall weight -->
+          <div>
+            <label class="block text-sm font-medium text-slate-300 mb-2">Overall Weight</label>
+            <div class="flex gap-2">
+              <div class="flex-1">
+                <input
+                  v-model="weightSt"
+                  type="number"
+                  placeholder="0"
+                  class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <span class="text-xs text-slate-500 mt-1 block">stone</span>
+              </div>
+              <div class="flex-1">
+                <input
+                  v-model="weightLbs"
+                  type="number"
+                  step="0.1"
+                  placeholder="0"
+                  class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <span class="text-xs text-slate-500 mt-1 block">lbs</span>
+              </div>
+            </div>
           </div>
 
           <!-- Fat weight -->
@@ -501,24 +565,34 @@ const sortedMetrics = computed(() => {
                 class="flex-1 text-left"
               >
                 <p class="text-sm text-slate-500 mb-1">{{ formatDate(metric.recorded_at) }}</p>
-                <div class="flex gap-4">
+                <div class="flex flex-wrap gap-x-4 gap-y-1">
+                  <div class="flex items-center gap-1">
+                    <span class="text-xs text-blue-400">Weight:</span>
+                    <span class="ml-1 font-medium">{{ formatStLbs(metric.weight_st, metric.weight_lbs) }}</span>
+                    <svg v-if="getTrend(index, 'weight') === 'down'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-emerald-400" viewBox="0 0 20 20" fill="currentColor">
+                      <path fill-rule="evenodd" d="M16.707 10.293a1 1 0 010 1.414l-6 6a1 1 0 01-1.414 0l-6-6a1 1 0 111.414-1.414L9 14.586V3a1 1 0 012 0v11.586l4.293-4.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                    </svg>
+                    <svg v-else-if="getTrend(index, 'weight') === 'up'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                      <path fill-rule="evenodd" d="M3.293 9.707a1 1 0 010-1.414l6-6a1 1 0 011.414 0l6 6a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L4.707 9.707a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+                    </svg>
+                  </div>
                   <div class="flex items-center gap-1">
                     <span class="text-xs text-red-400">Fat:</span>
                     <span class="ml-1 font-medium">{{ formatStLbs(metric.fat_st, metric.fat_lbs) }}</span>
-                    <svg v-if="getTrend(index, 'fat') === 'down'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
+                    <svg v-if="getTrend(index, 'fat') === 'down'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-emerald-400" viewBox="0 0 20 20" fill="currentColor">
                       <path fill-rule="evenodd" d="M16.707 10.293a1 1 0 010 1.414l-6 6a1 1 0 01-1.414 0l-6-6a1 1 0 111.414-1.414L9 14.586V3a1 1 0 012 0v11.586l4.293-4.293a1 1 0 011.414 0z" clip-rule="evenodd" />
                     </svg>
-                    <svg v-else-if="getTrend(index, 'fat') === 'up'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
+                    <svg v-else-if="getTrend(index, 'fat') === 'up'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-400" viewBox="0 0 20 20" fill="currentColor">
                       <path fill-rule="evenodd" d="M3.293 9.707a1 1 0 010-1.414l6-6a1 1 0 011.414 0l6 6a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L4.707 9.707a1 1 0 01-1.414 0z" clip-rule="evenodd" />
                     </svg>
                   </div>
                   <div class="flex items-center gap-1">
                     <span class="text-xs text-emerald-400">Muscle:</span>
                     <span class="ml-1 font-medium">{{ formatStLbs(metric.muscle_st, metric.muscle_lbs) }}</span>
-                    <svg v-if="getTrend(index, 'muscle') === 'up'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
+                    <svg v-if="getTrend(index, 'muscle') === 'up'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-emerald-400" viewBox="0 0 20 20" fill="currentColor">
                       <path fill-rule="evenodd" d="M3.293 9.707a1 1 0 010-1.414l6-6a1 1 0 011.414 0l6 6a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L4.707 9.707a1 1 0 01-1.414 0z" clip-rule="evenodd" />
                     </svg>
-                    <svg v-else-if="getTrend(index, 'muscle') === 'down'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
+                    <svg v-else-if="getTrend(index, 'muscle') === 'down'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-400" viewBox="0 0 20 20" fill="currentColor">
                       <path fill-rule="evenodd" d="M16.707 10.293a1 1 0 010 1.414l-6 6a1 1 0 01-1.414 0l-6-6a1 1 0 111.414-1.414L9 14.586V3a1 1 0 012 0v11.586l4.293-4.293a1 1 0 011.414 0z" clip-rule="evenodd" />
                     </svg>
                   </div>
