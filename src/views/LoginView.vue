@@ -37,7 +37,7 @@ async function handleSubmit() {
   <div class="min-h-screen flex items-center justify-center bg-slate-900 px-4">
     <div class="w-full max-w-sm">
       <div class="text-center mb-8">
-        <h1 class="text-3xl font-bold text-white">Trackd</h1>
+        <h1 class="text-3xl font-bold text-white">Trak</h1>
         <p class="text-slate-400 mt-2">Track your fitness journey</p>
       </div>
 
@@ -46,13 +46,23 @@ async function handleSubmit() {
           {{ isSignUp ? 'Create Account' : 'Welcome Back' }}
         </h2>
 
-        <div v-if="error" class="mb-4 p-3 rounded text-sm" :class="error.includes('Check your email') ? 'bg-emerald-900/50 text-emerald-300' : 'bg-red-900/50 text-red-300'">
+        <div
+          v-if="error"
+          class="mb-4 p-3 rounded text-sm"
+          :class="
+            error.includes('Check your email')
+              ? 'bg-emerald-900/50 text-emerald-300'
+              : 'bg-red-900/50 text-red-300'
+          "
+        >
           {{ error }}
         </div>
 
         <div class="space-y-4">
           <div v-if="isSignUp">
-            <label for="firstName" class="block text-sm font-medium text-slate-300 mb-1">First Name</label>
+            <label for="firstName" class="block text-sm font-medium text-slate-300 mb-1"
+              >First Name</label
+            >
             <input
               id="firstName"
               v-model="firstName"
@@ -76,7 +86,9 @@ async function handleSubmit() {
           </div>
 
           <div>
-            <label for="password" class="block text-sm font-medium text-slate-300 mb-1">Password</label>
+            <label for="password" class="block text-sm font-medium text-slate-300 mb-1"
+              >Password</label
+            >
             <input
               id="password"
               v-model="password"
@@ -101,7 +113,10 @@ async function handleSubmit() {
           {{ isSignUp ? 'Already have an account?' : "Don't have an account?" }}
           <button
             type="button"
-            @click="isSignUp = !isSignUp; error = ''"
+            @click="
+              isSignUp = !isSignUp
+              error = ''
+            "
             class="text-emerald-400 hover:text-emerald-300 font-medium ml-1"
           >
             {{ isSignUp ? 'Sign In' : 'Sign Up' }}

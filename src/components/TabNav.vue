@@ -1,16 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useSettingsStore } from '@/stores/settings'
 
 const route = useRoute()
 const router = useRouter()
+const settings = useSettingsStore()
 
-const tabs = [
-  { name: 'Home', path: '/' },
-  { name: 'Data', path: '/data' },
-  { name: 'Protein', path: '/protein' },
-  { name: 'PBs', path: '/pb' },
-]
+// Get tabs from settings (filtered by enabled pages)
+const tabs = computed(() => settings.enabledPageDetails)
 
 const currentTab = computed(() => route.path)
 

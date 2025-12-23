@@ -16,7 +16,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useSettingsStore } from '@/stores/settings'
 import { supabase } from '@/lib/supabase'
 import TabNav from '@/components/TabNav.vue'
-import type { BodyMetric, ProteinIntake, Goal } from '@/lib/database.types'
+import type { BodyMetric, ProteinIntake, CalorieIntake, Reward, Milestone } from '@/lib/database.types'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend)
 
@@ -32,8 +32,12 @@ const activeGraph = ref<'fat' | 'muscle'>('fat')
 const todayProtein = ref<number | null>(null)
 const allProteinIntakes = ref<ProteinIntake[]>([])
 
-// Goals
-const goals = ref<Goal[]>([])
+// Rewards
+const rewards = ref<Reward[]>([])
+const calorieIntakes = ref<CalorieIntake[]>([])
+
+// Milestones
+const milestones = ref<Milestone[]>([])
 
 // Calculate protein streak (consecutive days meeting goal)
 const proteinStreak = computed(() => {
@@ -41,7 +45,7 @@ const proteinStreak = computed(() => {
 
   // Group by date
   const dailyTotals: { [dateKey: string]: number } = {}
-  allProteinIntakes.value.forEach(intake => {
+  allProteinIntakes.value.forEach((intake) => {
     const date = new Date(intake.recorded_at)
     const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
     dailyTotals[dateKey] = (dailyTotals[dateKey] || 0) + intake.grams
@@ -82,14 +86,14 @@ const weeklyStats = computed(() => {
   weekAgo.setDate(weekAgo.getDate() - 7)
 
   // Count weigh-ins this week
-  const weighInsThisWeek = metrics.value.filter(m => {
+  const weighInsThisWeek = metrics.value.filter((m) => {
     const date = new Date(m.recorded_at)
     return date >= weekAgo && date <= today
   }).length
 
   // Count days protein goal met this week
   const dailyTotals: { [dateKey: string]: number } = {}
-  allProteinIntakes.value.forEach(intake => {
+  allProteinIntakes.value.forEach((intake) => {
     const date = new Date(intake.recorded_at)
     if (date >= weekAgo && date <= today) {
       const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
@@ -97,7 +101,9 @@ const weeklyStats = computed(() => {
     }
   })
 
-  const daysProteinGoalMet = Object.values(dailyTotals).filter(total => total >= settings.proteinGoal).length
+  const daysProteinGoalMet = Object.values(dailyTotals).filter(
+    (total) => total >= settings.proteinGoal,
+  ).length
 
   return {
     weighIns: weighInsThisWeek,
@@ -105,38 +111,118 @@ const weeklyStats = computed(() => {
   }
 })
 
-// Load active goals
-async function loadGoals() {
+// Load active rewards
+async function loadRewards() {
+  if (!auth.user?.id) return
+  try {
+    const [rewardsRes, calorieRes] = await Promise.all([
+      supabase
+        .from('rewards')
+        .select('*')
+        .eq('user_id', auth.user.id)
+        .is('completed_at', null)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('calorie_intake')
+        .select('*')
+        .eq('user_id', auth.user.id),
+    ])
+
+    if (rewardsRes.error) throw rewardsRes.error
+    rewards.value = (rewardsRes.data ?? []) as Reward[]
+    calorieIntakes.value = (calorieRes.data ?? []) as CalorieIntake[]
+  } catch (e) {
+    console.error('Failed to load rewards:', e)
+  }
+}
+
+// Load milestones
+async function loadMilestones() {
   if (!auth.user?.id) return
   try {
     const { data, error } = await supabase
-      .from('goals')
+      .from('milestones')
       .select('*')
       .eq('user_id', auth.user.id)
       .is('completed_at', null)
       .order('target_date', { ascending: true })
 
     if (error) throw error
-    goals.value = (data ?? []) as Goal[]
+    milestones.value = (data ?? []) as Milestone[]
   } catch (e) {
-    console.error('Failed to load goals:', e)
+    console.error('Failed to load milestones:', e)
   }
 }
 
-// Calculate goal progress
-function getGoalProgress(goal: Goal): { daysLeft: number; progress: number } {
+// Calculate milestone progress
+function getMilestoneProgress(milestone: Milestone) {
+  const created = new Date(milestone.created_at)
+  const target = new Date(milestone.target_date)
   const now = new Date()
-  now.setHours(0, 0, 0, 0)
-  const target = new Date(goal.target_date)
-  const created = new Date(goal.created_at)
+
   created.setHours(0, 0, 0, 0)
+  target.setHours(0, 0, 0, 0)
+  now.setHours(0, 0, 0, 0)
 
-  const totalDays = Math.ceil((target.getTime() - created.getTime()) / (1000 * 60 * 60 * 24))
-  const daysLeft = Math.ceil((target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
-  const daysPassed = totalDays - daysLeft
-  const progress = totalDays > 0 ? Math.min(100, Math.max(0, (daysPassed / totalDays) * 100)) : 100
+  const totalMs = target.getTime() - created.getTime()
+  const elapsedMs = now.getTime() - created.getTime()
+  const remainingMs = target.getTime() - now.getTime()
 
-  return { daysLeft, progress }
+  const daysLeft = Math.ceil(remainingMs / (1000 * 60 * 60 * 24))
+  const percentage = Math.min(100, Math.max(0, (elapsedMs / totalMs) * 100))
+
+  return { daysLeft, percentage }
+}
+
+// Calculate reward progress
+function getRewardProgress(reward: Reward): { current: number; percentage: number } {
+  const goal = reward.tracking_type === 'protein' ? settings.proteinGoal : settings.calorieGoal
+
+  // Build daily totals
+  const totals: { [dateKey: string]: number } = {}
+  if (reward.tracking_type === 'protein') {
+    allProteinIntakes.value.forEach((intake) => {
+      const date = new Date(intake.recorded_at)
+      const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+      totals[dateKey] = (totals[dateKey] || 0) + intake.grams
+    })
+  } else {
+    calorieIntakes.value.forEach((intake) => {
+      const date = new Date(intake.recorded_at)
+      const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+      totals[dateKey] = (totals[dateKey] || 0) + intake.calories
+    })
+  }
+
+  const startDate = new Date(reward.created_at)
+  startDate.setHours(0, 0, 0, 0)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  if (reward.streak_type === 'consecutive') {
+    let streak = 0
+    for (let i = 0; i <= 365; i++) {
+      const d = new Date(today)
+      d.setDate(d.getDate() - i)
+      if (d < startDate) break
+      const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      if ((totals[dateKey] || 0) >= goal) {
+        streak++
+      } else if (i > 0) {
+        break
+      }
+    }
+    return { current: streak, percentage: Math.min(100, (streak / reward.target_days) * 100) }
+  } else {
+    let daysMetGoal = 0
+    const d = new Date(startDate)
+    while (d <= today) {
+      const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      if ((totals[dateKey] || 0) >= goal) daysMetGoal++
+      d.setDate(d.getDate() + 1)
+    }
+    return { current: daysMetGoal, percentage: Math.min(100, (daysMetGoal / reward.target_days) * 100) }
+  }
 }
 
 // Load protein intake (all for streak, filtered for today)
@@ -158,15 +244,14 @@ async function loadProteinData() {
     const today = new Date()
     const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
 
-    const todayIntakes = allProteinIntakes.value.filter(intake => {
+    const todayIntakes = allProteinIntakes.value.filter((intake) => {
       const date = new Date(intake.recorded_at)
       const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
       return dateKey === todayKey
     })
 
-    todayProtein.value = todayIntakes.length > 0
-      ? todayIntakes.reduce((sum, i) => sum + i.grams, 0)
-      : null
+    todayProtein.value =
+      todayIntakes.length > 0 ? todayIntakes.reduce((sum, i) => sum + i.grams, 0) : null
   } catch (e) {
     console.error('Failed to load protein intake:', e)
   }
@@ -224,9 +309,7 @@ const chartData = computed(() => {
 
   const labels = dataSource.map((d) => d.date)
   const data = dataSource.map((d) =>
-    activeGraph.value === 'fat'
-      ? d.fatSt * 14 + d.fatLbs
-      : d.muscleSt * 14 + d.muscleLbs
+    activeGraph.value === 'fat' ? d.fatSt * 14 + d.fatLbs : d.muscleSt * 14 + d.muscleLbs,
   )
 
   return {
@@ -420,7 +503,8 @@ onMounted(async () => {
   }, 60000)
   await loadMetrics()
   await loadProteinData()
-  await loadGoals()
+  await loadRewards()
+  await loadMilestones()
 })
 
 onUnmounted(() => {
@@ -436,15 +520,46 @@ onUnmounted(() => {
     <header class="bg-slate-800 border-b border-slate-700 px-4 py-4">
       <div class="flex items-center justify-between">
         <div class="w-20"></div>
-        <h1 class="text-xl font-bold text-emerald-400">Trackd</h1>
-        <div class="flex items-center gap-2 w-20 justify-end">
+        <h1 class="text-xl font-bold text-emerald-400">Trak</h1>
+        <div class="flex items-center gap-1 w-24 justify-end">
           <button
-            @click="router.push('/goals')"
+            @click="router.push('/milestones')"
             class="text-slate-400 hover:text-white p-1"
-            title="Goals"
+            title="Milestones"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9"
+              />
+            </svg>
+          </button>
+          <button
+            @click="router.push('/rewards')"
+            class="text-slate-400 hover:text-white p-1"
+            title="Rewards"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"
+              />
             </svg>
           </button>
           <button
@@ -452,9 +567,25 @@ onUnmounted(() => {
             class="text-slate-400 hover:text-white p-1"
             title="Settings"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+              />
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+              />
             </svg>
           </button>
         </div>
@@ -519,46 +650,83 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Goals section -->
-      <div v-if="goals.length > 0" class="mb-6">
+      <!-- Rewards section -->
+      <div v-if="rewards.length > 0" class="mb-6">
         <div class="flex items-center justify-between mb-3">
-          <h3 class="text-lg font-semibold text-slate-300">Goals</h3>
+          <h3 class="text-lg font-semibold text-slate-300">Rewards</h3>
           <button
-            @click="router.push('/goals')"
+            @click="router.push('/rewards')"
             class="text-sm text-emerald-400 hover:text-emerald-300"
           >
             View all
           </button>
         </div>
         <div class="space-y-3">
-          <div
-            v-for="goal in goals.slice(0, 3)"
-            :key="goal.id"
-            class="bg-slate-800 rounded-xl p-4"
-          >
-            <p class="font-medium mb-2">{{ goal.description }}</p>
+          <div v-for="reward in rewards.slice(0, 3)" :key="reward.id" class="bg-slate-800 rounded-xl p-4">
+            <div class="flex items-center gap-2 mb-2">
+              <p class="font-medium">{{ reward.name }}</p>
+              <span
+                class="text-xs px-2 py-0.5 rounded-full"
+                :class="
+                  reward.tracking_type === 'protein'
+                    ? 'bg-emerald-500/20 text-emerald-400'
+                    : 'bg-orange-500/20 text-orange-400'
+                "
+              >
+                {{ reward.tracking_type === 'protein' ? 'Protein' : 'Calories' }}
+              </span>
+            </div>
             <div class="h-2 bg-slate-700 rounded-full overflow-hidden">
               <div
                 class="h-full transition-all duration-300"
-                :class="getGoalProgress(goal).daysLeft <= 0 ? 'bg-red-500' : 'bg-emerald-500'"
-                :style="{ width: `${getGoalProgress(goal).progress}%` }"
+                :class="reward.tracking_type === 'protein' ? 'bg-emerald-500' : 'bg-orange-500'"
+                :style="{ width: `${getRewardProgress(reward).percentage}%` }"
               />
             </div>
-            <p class="text-xs mt-2">
-              <span v-if="goal.reward" class="text-amber-400">{{ goal.reward }}</span>
-              <span v-if="goal.reward" class="text-slate-500"> - </span>
-              <span :class="getGoalProgress(goal).daysLeft <= 0 ? 'text-red-400' : 'text-slate-500'">
-                <template v-if="getGoalProgress(goal).daysLeft > 0">
-                  {{ getGoalProgress(goal).daysLeft }} days remaining
+            <p class="text-xs text-slate-500 mt-2">
+              {{ getRewardProgress(reward).current }} / {{ reward.target_days }} days
+              ({{ reward.streak_type === 'consecutive' ? 'streak' : 'total' }})
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Milestones section -->
+      <div v-if="milestones.length > 0" class="mb-6">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-lg font-semibold text-slate-300">Milestones</h3>
+          <button
+            @click="router.push('/milestones')"
+            class="text-sm text-emerald-400 hover:text-emerald-300"
+          >
+            View all
+          </button>
+        </div>
+        <div class="space-y-3">
+          <div v-for="milestone in milestones.slice(0, 3)" :key="milestone.id" class="bg-slate-800 rounded-xl p-4">
+            <div class="flex items-center justify-between mb-2">
+              <p class="font-medium">{{ milestone.name }}</p>
+              <span
+                class="text-sm"
+                :class="getMilestoneProgress(milestone).daysLeft <= 0 ? 'text-amber-400' : 'text-slate-400'"
+              >
+                <template v-if="getMilestoneProgress(milestone).daysLeft > 0">
+                  {{ getMilestoneProgress(milestone).daysLeft }} days left
                 </template>
-                <template v-else-if="getGoalProgress(goal).daysLeft === 0">
-                  Due today!
+                <template v-else-if="getMilestoneProgress(milestone).daysLeft === 0">
+                  Today!
                 </template>
                 <template v-else>
-                  {{ Math.abs(getGoalProgress(goal).daysLeft) }} days overdue
+                  {{ Math.abs(getMilestoneProgress(milestone).daysLeft) }} days overdue
                 </template>
               </span>
-            </p>
+            </div>
+            <div class="h-2 bg-slate-700 rounded-full overflow-hidden">
+              <div
+                class="h-full bg-blue-500 transition-all duration-300"
+                :style="{ width: `${getMilestoneProgress(milestone).percentage}%` }"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -586,11 +754,11 @@ onUnmounted(() => {
           <span class="block text-sm font-medium">Personal Bests</span>
         </button>
         <button
-          @click="router.push('/goals')"
+          @click="router.push('/rewards')"
           class="py-4 px-4 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-2xl text-left transition-colors"
         >
-          <span class="block text-sm font-medium">Goals</span>
-          <span class="block text-xs text-slate-400 mt-1">{{ goals.length }} active</span>
+          <span class="block text-sm font-medium">Rewards</span>
+          <span class="block text-xs text-slate-400 mt-1">{{ rewards.length }} active</span>
         </button>
       </div>
     </main>

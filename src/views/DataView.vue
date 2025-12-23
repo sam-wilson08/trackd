@@ -35,6 +35,9 @@ const isLoading = ref(true)
 const showForm = ref(false)
 const activeGraph = ref<'weight' | 'fat' | 'muscle'>('weight')
 
+// Form mode: 'simple' for just overall weight, 'detailed' for fat/muscle breakdown
+const entryMode = ref<'simple' | 'detailed'>('simple')
+
 // Form data
 const weightSt = ref('')
 const weightLbs = ref('')
@@ -64,6 +67,7 @@ function resetForm() {
   muscleLbs.value = ''
   recordedDate.value = getTodayDate()
   editingId.value = null
+  entryMode.value = 'simple'
 }
 
 // Start editing a metric
@@ -76,6 +80,9 @@ function startEdit(metric: BodyMetric) {
   muscleSt.value = metric.muscle_st?.toString() || ''
   muscleLbs.value = metric.muscle_lbs?.toString() || ''
   recordedDate.value = new Date(metric.recorded_at).toISOString().split('T')[0] ?? ''
+  // Detect entry mode based on what was filled in
+  const hasBreakdown = metric.fat_st || metric.fat_lbs || metric.muscle_st || metric.muscle_lbs
+  entryMode.value = hasBreakdown ? 'detailed' : 'simple'
   showForm.value = true
 }
 
@@ -97,11 +104,33 @@ function formatStLbs(st: number | null, lbs: number | null): string {
 
 // Convert st/lbs to total lbs for comparison
 function toTotalLbs(st: number | null, lbs: number | null): number {
-  return ((st || 0) * 14) + (lbs || 0)
+  return (st || 0) * 14 + (lbs || 0)
+}
+
+// Helper to get effective weight (direct weight or sum of fat + muscle)
+function getEffectiveWeight(m: BodyMetric): { st: number; lbs: number } {
+  // If weight is directly entered, use it
+  if (m.weight_st || m.weight_lbs) {
+    return { st: m.weight_st || 0, lbs: m.weight_lbs || 0 }
+  }
+  // Otherwise calculate from fat + muscle
+  const fatLbsTotal = (m.fat_st || 0) * 14 + (m.fat_lbs || 0)
+  const muscleLbsTotal = (m.muscle_st || 0) * 14 + (m.muscle_lbs || 0)
+  const totalLbs = fatLbsTotal + muscleLbsTotal
+  return { st: Math.floor(totalLbs / 14), lbs: totalLbs % 14 }
+}
+
+// Get effective weight for display in history
+function getEffectiveWeightDisplay(metric: BodyMetric): string {
+  const effective = getEffectiveWeight(metric)
+  return formatStLbs(effective.st, effective.lbs)
 }
 
 // Get trend compared to previous entry (returns 'up', 'down', or 'same')
-function getTrend(currentIndex: number, type: 'weight' | 'fat' | 'muscle'): 'up' | 'down' | 'same' | null {
+function getTrend(
+  currentIndex: number,
+  type: 'weight' | 'fat' | 'muscle',
+): 'up' | 'down' | 'same' | null {
   // sortedMetrics is newest first, so previous entry is at currentIndex + 1
   if (currentIndex >= sortedMetrics.value.length - 1) return null
 
@@ -114,8 +143,10 @@ function getTrend(currentIndex: number, type: 'weight' | 'fat' | 'muscle'): 'up'
   let previousVal: number
 
   if (type === 'weight') {
-    currentVal = toTotalLbs(current.weight_st, current.weight_lbs)
-    previousVal = toTotalLbs(previous.weight_st, previous.weight_lbs)
+    const currentWeight = getEffectiveWeight(current)
+    const previousWeight = getEffectiveWeight(previous)
+    currentVal = currentWeight.st * 14 + currentWeight.lbs
+    previousVal = previousWeight.st * 14 + previousWeight.lbs
   } else if (type === 'fat') {
     currentVal = toTotalLbs(current.fat_st, current.fat_lbs)
     previousVal = toTotalLbs(previous.fat_st, previous.fat_lbs)
@@ -132,15 +163,18 @@ function getTrend(currentIndex: number, type: 'weight' | 'fat' | 'muscle'): 'up'
 const chartData = computed(() => {
   if (metrics.value.length === 0) return { labels: [], datasets: [] }
 
-  const dataSource = metrics.value.map((m) => ({
-    date: new Date(m.recorded_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
-    weightSt: m.weight_st || 0,
-    weightLbs: m.weight_lbs || 0,
-    fatSt: m.fat_st || 0,
-    fatLbs: m.fat_lbs || 0,
-    muscleSt: m.muscle_st || 0,
-    muscleLbs: m.muscle_lbs || 0,
-  }))
+  const dataSource = metrics.value.map((m) => {
+    const effectiveWeight = getEffectiveWeight(m)
+    return {
+      date: new Date(m.recorded_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
+      weightSt: effectiveWeight.st,
+      weightLbs: effectiveWeight.lbs,
+      fatSt: m.fat_st || 0,
+      fatLbs: m.fat_lbs || 0,
+      muscleSt: m.muscle_st || 0,
+      muscleLbs: m.muscle_lbs || 0,
+    }
+  })
 
   const labels = dataSource.map((d) => d.date)
   // Convert to total lbs for graphing (1 stone = 14 lbs)
@@ -164,7 +198,12 @@ const chartData = computed(() => {
     labels,
     datasets: [
       {
-        label: activeGraph.value === 'weight' ? 'Weight' : activeGraph.value === 'fat' ? 'Fat' : 'Muscle',
+        label:
+          activeGraph.value === 'weight'
+            ? 'Weight'
+            : activeGraph.value === 'fat'
+              ? 'Fat'
+              : 'Muscle',
         data,
         borderColor: colors[activeGraph.value].border,
         backgroundColor: colors[activeGraph.value].bg,
@@ -333,7 +372,7 @@ onMounted(() => {
 // Metrics sorted by date descending for the list
 const sortedMetrics = computed(() => {
   return [...metrics.value].sort(
-    (a, b) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime()
+    (a, b) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime(),
   )
 })
 </script>
@@ -343,24 +382,72 @@ const sortedMetrics = computed(() => {
     <header class="bg-slate-800 border-b border-slate-700 px-4 py-4">
       <div class="flex items-center justify-between">
         <div class="w-20"></div>
-        <h1 class="text-xl font-bold text-emerald-400">Trackd</h1>
-        <div class="flex items-center gap-3 w-20 justify-end">
+        <h1 class="text-xl font-bold text-emerald-400">Trak</h1>
+        <div class="flex items-center gap-1 w-24 justify-end">
           <button
-            @click="router.push('/goals')"
+            @click="router.push('/milestones')"
             class="text-slate-400 hover:text-white p-1"
-            title="Goals"
+            title="Milestones"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9"
+              />
             </svg>
           </button>
           <button
-            @click="auth.signOut()"
+            @click="router.push('/rewards')"
             class="text-slate-400 hover:text-white p-1"
-            title="Sign Out"
+            title="Rewards"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"
+              />
+            </svg>
+          </button>
+          <button
+            @click="router.push('/settings')"
+            class="text-slate-400 hover:text-white p-1"
+            title="Settings"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+              />
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+              />
             </svg>
           </button>
         </div>
@@ -410,7 +497,14 @@ const sortedMetrics = computed(() => {
       <!-- Chart -->
       <div class="bg-slate-800 rounded-xl p-4 mb-4">
         <h2 class="text-sm font-medium text-slate-400 mb-3">
-          {{ activeGraph === 'weight' ? 'Overall Weight' : activeGraph === 'fat' ? 'Fat Weight' : 'Muscle Weight' }} Over Time
+          {{
+            activeGraph === 'weight'
+              ? 'Overall Weight'
+              : activeGraph === 'fat'
+                ? 'Fat Weight'
+                : 'Muscle Weight'
+          }}
+          Over Time
         </h2>
         <div class="h-64">
           <Line :data="chartData" :options="chartOptions" />
@@ -444,9 +538,40 @@ const sortedMetrics = computed(() => {
             />
           </div>
 
-          <!-- Overall weight -->
+          <!-- Entry mode toggle -->
           <div>
-            <label class="block text-sm font-medium text-slate-300 mb-2">Overall Weight</label>
+            <label class="block text-sm font-medium text-slate-300 mb-2">Entry Type</label>
+            <div class="flex gap-2">
+              <button
+                type="button"
+                @click="entryMode = 'simple'"
+                class="flex-1 py-2 rounded-lg font-medium transition-colors"
+                :class="
+                  entryMode === 'simple'
+                    ? 'bg-blue-500/20 text-blue-400 border border-blue-500/50'
+                    : 'bg-slate-700 text-slate-400 border border-slate-600'
+                "
+              >
+                Simple
+              </button>
+              <button
+                type="button"
+                @click="entryMode = 'detailed'"
+                class="flex-1 py-2 rounded-lg font-medium transition-colors"
+                :class="
+                  entryMode === 'detailed'
+                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50'
+                    : 'bg-slate-700 text-slate-400 border border-slate-600'
+                "
+              >
+                Breakdown
+              </button>
+            </div>
+          </div>
+
+          <!-- Simple mode: Overall weight only -->
+          <div v-if="entryMode === 'simple'">
+            <label class="block text-sm font-medium text-slate-300 mb-2">Weight</label>
             <div class="flex gap-2">
               <div class="flex-1">
                 <input
@@ -470,57 +595,60 @@ const sortedMetrics = computed(() => {
             </div>
           </div>
 
-          <!-- Fat weight -->
-          <div>
-            <label class="block text-sm font-medium text-slate-300 mb-2">Fat Weight</label>
-            <div class="flex gap-2">
-              <div class="flex-1">
-                <input
-                  v-model="fatSt"
-                  type="number"
-                  placeholder="0"
-                  class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-                <span class="text-xs text-slate-500 mt-1 block">stone</span>
-              </div>
-              <div class="flex-1">
-                <input
-                  v-model="fatLbs"
-                  type="number"
-                  step="0.1"
-                  placeholder="0"
-                  class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-                <span class="text-xs text-slate-500 mt-1 block">lbs</span>
+          <!-- Detailed mode: Fat and Muscle breakdown -->
+          <template v-else>
+            <!-- Fat weight -->
+            <div>
+              <label class="block text-sm font-medium text-slate-300 mb-2">Fat Weight</label>
+              <div class="flex gap-2">
+                <div class="flex-1">
+                  <input
+                    v-model="fatSt"
+                    type="number"
+                    placeholder="0"
+                    class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                  <span class="text-xs text-slate-500 mt-1 block">stone</span>
+                </div>
+                <div class="flex-1">
+                  <input
+                    v-model="fatLbs"
+                    type="number"
+                    step="0.1"
+                    placeholder="0"
+                    class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                  <span class="text-xs text-slate-500 mt-1 block">lbs</span>
+                </div>
               </div>
             </div>
-          </div>
 
-          <!-- Muscle weight -->
-          <div>
-            <label class="block text-sm font-medium text-slate-300 mb-2">Muscle Weight</label>
-            <div class="flex gap-2">
-              <div class="flex-1">
-                <input
-                  v-model="muscleSt"
-                  type="number"
-                  placeholder="0"
-                  class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-                <span class="text-xs text-slate-500 mt-1 block">stone</span>
-              </div>
-              <div class="flex-1">
-                <input
-                  v-model="muscleLbs"
-                  type="number"
-                  step="0.1"
-                  placeholder="0"
-                  class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-                <span class="text-xs text-slate-500 mt-1 block">lbs</span>
+            <!-- Muscle weight -->
+            <div>
+              <label class="block text-sm font-medium text-slate-300 mb-2">Muscle Weight</label>
+              <div class="flex gap-2">
+                <div class="flex-1">
+                  <input
+                    v-model="muscleSt"
+                    type="number"
+                    placeholder="0"
+                    class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                  <span class="text-xs text-slate-500 mt-1 block">stone</span>
+                </div>
+                <div class="flex-1">
+                  <input
+                    v-model="muscleLbs"
+                    type="number"
+                    step="0.1"
+                    placeholder="0"
+                    class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                  <span class="text-xs text-slate-500 mt-1 block">lbs</span>
+                </div>
               </div>
             </div>
-          </div>
+          </template>
         </div>
 
         <div class="flex gap-2 mt-4">
@@ -560,40 +688,103 @@ const sortedMetrics = computed(() => {
             class="bg-slate-800 rounded-xl p-4"
           >
             <div class="flex items-start justify-between">
-              <button
-                @click="startEdit(metric)"
-                class="flex-1 text-left"
-              >
+              <button @click="startEdit(metric)" class="flex-1 text-left">
                 <p class="text-sm text-slate-500 mb-1">{{ formatDate(metric.recorded_at) }}</p>
                 <div class="flex flex-wrap gap-x-4 gap-y-1">
+                  <!-- Always show weight (calculated or direct) -->
                   <div class="flex items-center gap-1">
                     <span class="text-xs text-blue-400">Weight:</span>
-                    <span class="ml-1 font-medium">{{ formatStLbs(metric.weight_st, metric.weight_lbs) }}</span>
-                    <svg v-if="getTrend(index, 'weight') === 'down'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-emerald-400" viewBox="0 0 20 20" fill="currentColor">
-                      <path fill-rule="evenodd" d="M16.707 10.293a1 1 0 010 1.414l-6 6a1 1 0 01-1.414 0l-6-6a1 1 0 111.414-1.414L9 14.586V3a1 1 0 012 0v11.586l4.293-4.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                    <span class="ml-1 font-medium">{{ getEffectiveWeightDisplay(metric) }}</span>
+                    <svg
+                      v-if="getTrend(index, 'weight') === 'down'"
+                      xmlns="http://www.w3.org/2000/svg"
+                      class="h-4 w-4 text-emerald-400"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path
+                        fill-rule="evenodd"
+                        d="M16.707 10.293a1 1 0 010 1.414l-6 6a1 1 0 01-1.414 0l-6-6a1 1 0 111.414-1.414L9 14.586V3a1 1 0 012 0v11.586l4.293-4.293a1 1 0 011.414 0z"
+                        clip-rule="evenodd"
+                      />
                     </svg>
-                    <svg v-else-if="getTrend(index, 'weight') === 'up'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                      <path fill-rule="evenodd" d="M3.293 9.707a1 1 0 010-1.414l6-6a1 1 0 011.414 0l6 6a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L4.707 9.707a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+                    <svg
+                      v-else-if="getTrend(index, 'weight') === 'up'"
+                      xmlns="http://www.w3.org/2000/svg"
+                      class="h-4 w-4 text-red-400"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path
+                        fill-rule="evenodd"
+                        d="M3.293 9.707a1 1 0 010-1.414l6-6a1 1 0 011.414 0l6 6a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L4.707 9.707a1 1 0 01-1.414 0z"
+                        clip-rule="evenodd"
+                      />
                     </svg>
                   </div>
-                  <div class="flex items-center gap-1">
+                  <!-- Only show fat/muscle if they were entered -->
+                  <div v-if="metric.fat_st || metric.fat_lbs" class="flex items-center gap-1">
                     <span class="text-xs text-red-400">Fat:</span>
-                    <span class="ml-1 font-medium">{{ formatStLbs(metric.fat_st, metric.fat_lbs) }}</span>
-                    <svg v-if="getTrend(index, 'fat') === 'down'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-emerald-400" viewBox="0 0 20 20" fill="currentColor">
-                      <path fill-rule="evenodd" d="M16.707 10.293a1 1 0 010 1.414l-6 6a1 1 0 01-1.414 0l-6-6a1 1 0 111.414-1.414L9 14.586V3a1 1 0 012 0v11.586l4.293-4.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                    <span class="ml-1 font-medium">{{
+                      formatStLbs(metric.fat_st, metric.fat_lbs)
+                    }}</span>
+                    <svg
+                      v-if="getTrend(index, 'fat') === 'down'"
+                      xmlns="http://www.w3.org/2000/svg"
+                      class="h-4 w-4 text-emerald-400"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path
+                        fill-rule="evenodd"
+                        d="M16.707 10.293a1 1 0 010 1.414l-6 6a1 1 0 01-1.414 0l-6-6a1 1 0 111.414-1.414L9 14.586V3a1 1 0 012 0v11.586l4.293-4.293a1 1 0 011.414 0z"
+                        clip-rule="evenodd"
+                      />
                     </svg>
-                    <svg v-else-if="getTrend(index, 'fat') === 'up'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                      <path fill-rule="evenodd" d="M3.293 9.707a1 1 0 010-1.414l6-6a1 1 0 011.414 0l6 6a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L4.707 9.707a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+                    <svg
+                      v-else-if="getTrend(index, 'fat') === 'up'"
+                      xmlns="http://www.w3.org/2000/svg"
+                      class="h-4 w-4 text-red-400"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path
+                        fill-rule="evenodd"
+                        d="M3.293 9.707a1 1 0 010-1.414l6-6a1 1 0 011.414 0l6 6a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L4.707 9.707a1 1 0 01-1.414 0z"
+                        clip-rule="evenodd"
+                      />
                     </svg>
                   </div>
-                  <div class="flex items-center gap-1">
+                  <div v-if="metric.muscle_st || metric.muscle_lbs" class="flex items-center gap-1">
                     <span class="text-xs text-emerald-400">Muscle:</span>
-                    <span class="ml-1 font-medium">{{ formatStLbs(metric.muscle_st, metric.muscle_lbs) }}</span>
-                    <svg v-if="getTrend(index, 'muscle') === 'up'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-emerald-400" viewBox="0 0 20 20" fill="currentColor">
-                      <path fill-rule="evenodd" d="M3.293 9.707a1 1 0 010-1.414l6-6a1 1 0 011.414 0l6 6a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L4.707 9.707a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+                    <span class="ml-1 font-medium">{{
+                      formatStLbs(metric.muscle_st, metric.muscle_lbs)
+                    }}</span>
+                    <svg
+                      v-if="getTrend(index, 'muscle') === 'up'"
+                      xmlns="http://www.w3.org/2000/svg"
+                      class="h-4 w-4 text-emerald-400"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path
+                        fill-rule="evenodd"
+                        d="M3.293 9.707a1 1 0 010-1.414l6-6a1 1 0 011.414 0l6 6a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L4.707 9.707a1 1 0 01-1.414 0z"
+                        clip-rule="evenodd"
+                      />
                     </svg>
-                    <svg v-else-if="getTrend(index, 'muscle') === 'down'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                      <path fill-rule="evenodd" d="M16.707 10.293a1 1 0 010 1.414l-6 6a1 1 0 01-1.414 0l-6-6a1 1 0 111.414-1.414L9 14.586V3a1 1 0 012 0v11.586l4.293-4.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                    <svg
+                      v-else-if="getTrend(index, 'muscle') === 'down'"
+                      xmlns="http://www.w3.org/2000/svg"
+                      class="h-4 w-4 text-red-400"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path
+                        fill-rule="evenodd"
+                        d="M16.707 10.293a1 1 0 010 1.414l-6 6a1 1 0 01-1.414 0l-6-6a1 1 0 111.414-1.414L9 14.586V3a1 1 0 012 0v11.586l4.293-4.293a1 1 0 011.414 0z"
+                        clip-rule="evenodd"
+                      />
                     </svg>
                   </div>
                 </div>
@@ -602,7 +793,12 @@ const sortedMetrics = computed(() => {
                 @click.stop="deleteMetric(metric.id)"
                 class="text-slate-500 hover:text-red-400 transition-colors p-1"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  class="h-5 w-5"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
                   <path
                     fill-rule="evenodd"
                     d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"

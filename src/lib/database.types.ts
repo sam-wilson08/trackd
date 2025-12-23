@@ -190,23 +190,50 @@ export interface Database {
         }
         Relationships: []
       }
+      calorie_intake: {
+        Row: {
+          id: string
+          user_id: string
+          calories: number
+          recorded_at: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          calories: number
+          recorded_at?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          calories?: number
+          recorded_at?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
       personal_bests: {
         Row: {
           id: string
           user_id: string
           name: string
+          group_name: string | null
           created_at: string
         }
         Insert: {
           id?: string
           user_id: string
           name: string
+          group_name?: string | null
           created_at?: string
         }
         Update: {
           id?: string
           user_id?: string
           name?: string
+          group_name?: string | null
           created_at?: string
         }
         Relationships: []
@@ -244,12 +271,47 @@ export interface Database {
         }
         Relationships: []
       }
-      goals: {
+      rewards: {
         Row: {
           id: string
           user_id: string
-          description: string
-          reward: string | null
+          name: string
+          tracking_type: 'protein' | 'calories'
+          streak_type: 'consecutive' | 'accumulative'
+          target_days: number
+          created_at: string
+          completed_at: string | null
+          claimed_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          name: string
+          tracking_type: 'protein' | 'calories'
+          streak_type: 'consecutive' | 'accumulative'
+          target_days: number
+          created_at?: string
+          completed_at?: string | null
+          claimed_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          name?: string
+          tracking_type?: 'protein' | 'calories'
+          streak_type?: 'consecutive' | 'accumulative'
+          target_days?: number
+          created_at?: string
+          completed_at?: string | null
+          claimed_at?: string | null
+        }
+        Relationships: []
+      }
+      milestones: {
+        Row: {
+          id: string
+          user_id: string
+          name: string
           target_date: string
           created_at: string
           completed_at: string | null
@@ -257,8 +319,7 @@ export interface Database {
         Insert: {
           id?: string
           user_id: string
-          description: string
-          reward?: string | null
+          name: string
           target_date: string
           created_at?: string
           completed_at?: string | null
@@ -266,8 +327,7 @@ export interface Database {
         Update: {
           id?: string
           user_id?: string
-          description?: string
-          reward?: string | null
+          name?: string
           target_date?: string
           created_at?: string
           completed_at?: string | null
@@ -295,9 +355,13 @@ export type BodyMetric = Database['public']['Tables']['body_metrics']['Row']
 export type BodyMetricInsert = Database['public']['Tables']['body_metrics']['Insert']
 export type ProteinIntake = Database['public']['Tables']['protein_intake']['Row']
 export type ProteinIntakeInsert = Database['public']['Tables']['protein_intake']['Insert']
+export type CalorieIntake = Database['public']['Tables']['calorie_intake']['Row']
+export type CalorieIntakeInsert = Database['public']['Tables']['calorie_intake']['Insert']
 export type PersonalBest = Database['public']['Tables']['personal_bests']['Row']
 export type PersonalBestInsert = Database['public']['Tables']['personal_bests']['Insert']
 export type PersonalBestRecord = Database['public']['Tables']['personal_best_records']['Row']
 export type PersonalBestRecordInsert = Database['public']['Tables']['personal_best_records']['Insert']
-export type Goal = Database['public']['Tables']['goals']['Row']
-export type GoalInsert = Database['public']['Tables']['goals']['Insert']
+export type Reward = Database['public']['Tables']['rewards']['Row']
+export type RewardInsert = Database['public']['Tables']['rewards']['Insert']
+export type Milestone = Database['public']['Tables']['milestones']['Row']
+export type MilestoneInsert = Database['public']['Tables']['milestones']['Insert']

@@ -1,13 +1,29 @@
 import { defineStore } from 'pinia'
-import { ref, watch } from 'vue'
+import { ref, computed } from 'vue'
 
 export type WeightUnit = 'imperial' | 'metric'
 export type Theme = 'dark' | 'light'
+export type NutritionTracking = 'protein' | 'calories' | 'both'
+
+// Home page is always shown
+export const HOME_PAGE = { id: 'home', name: 'Home', path: '/' } as const
+
+// Configurable pages that can be shown/hidden (up to 3)
+export const CONFIGURABLE_PAGES = [
+  { id: 'data', name: 'Data', path: '/data' },
+  { id: 'nutrition', name: 'Nutrition', path: '/nutrition' },
+  { id: 'pb', name: 'PBs', path: '/pb' },
+] as const
+
+export type ConfigurablePageId = typeof CONFIGURABLE_PAGES[number]['id']
 
 export const useSettingsStore = defineStore('settings', () => {
   const weightUnit = ref<WeightUnit>('imperial')
   const theme = ref<Theme>('dark')
   const proteinGoal = ref(150)
+  const calorieGoal = ref(2000)
+  const nutritionTracking = ref<NutritionTracking>('protein')
+  const enabledPages = ref<ConfigurablePageId[]>(['data', 'nutrition', 'pb'])
 
   // Load from localStorage
   function initialize() {
@@ -24,6 +40,31 @@ export const useSettingsStore = defineStore('settings', () => {
     const savedProteinGoal = localStorage.getItem('proteinGoal')
     if (savedProteinGoal) {
       proteinGoal.value = parseInt(savedProteinGoal)
+    }
+
+    const savedCalorieGoal = localStorage.getItem('calorieGoal')
+    if (savedCalorieGoal) {
+      calorieGoal.value = parseInt(savedCalorieGoal)
+    }
+
+    const savedNutritionTracking = localStorage.getItem('nutritionTracking')
+    if (savedNutritionTracking === 'protein' || savedNutritionTracking === 'calories' || savedNutritionTracking === 'both') {
+      nutritionTracking.value = savedNutritionTracking
+    }
+
+    const savedPages = localStorage.getItem('enabledPages')
+    if (savedPages) {
+      try {
+        const parsed = JSON.parse(savedPages) as ConfigurablePageId[]
+        // Validate that all parsed IDs are valid configurable page IDs
+        const validIds = CONFIGURABLE_PAGES.map(p => p.id)
+        const validParsed = parsed.filter(id => validIds.includes(id))
+        if (Array.isArray(validParsed) && validParsed.length > 0 && validParsed.length <= 3) {
+          enabledPages.value = validParsed
+        }
+      } catch {
+        // Keep default pages
+      }
     }
 
     applyTheme()
@@ -48,6 +89,43 @@ export const useSettingsStore = defineStore('settings', () => {
     proteinGoal.value = goal
     localStorage.setItem('proteinGoal', goal.toString())
   }
+
+  function setCalorieGoal(goal: number) {
+    calorieGoal.value = goal
+    localStorage.setItem('calorieGoal', goal.toString())
+  }
+
+  function setNutritionTracking(tracking: NutritionTracking) {
+    nutritionTracking.value = tracking
+    localStorage.setItem('nutritionTracking', tracking)
+  }
+
+  // Page configuration
+  function togglePage(pageId: ConfigurablePageId) {
+    const index = enabledPages.value.indexOf(pageId)
+    if (index > -1) {
+      // Don't allow disabling if only one page left
+      if (enabledPages.value.length > 1) {
+        enabledPages.value.splice(index, 1)
+      }
+    } else {
+      // Don't allow enabling if already at max (3)
+      if (enabledPages.value.length < 3) {
+        enabledPages.value.push(pageId)
+      }
+    }
+    localStorage.setItem('enabledPages', JSON.stringify(enabledPages.value))
+  }
+
+  function isPageEnabled(pageId: ConfigurablePageId): boolean {
+    return enabledPages.value.includes(pageId)
+  }
+
+  // Get enabled pages with their details for TabNav (Home is always first)
+  const enabledPageDetails = computed(() => {
+    const configuredPages = CONFIGURABLE_PAGES.filter(page => enabledPages.value.includes(page.id))
+    return [HOME_PAGE, ...configuredPages]
+  })
 
   function applyTheme() {
     if (theme.value === 'light') {
@@ -78,11 +156,19 @@ export const useSettingsStore = defineStore('settings', () => {
     weightUnit,
     theme,
     proteinGoal,
+    calorieGoal,
+    nutritionTracking,
+    enabledPages,
+    enabledPageDetails,
     initialize,
     setWeightUnit,
     setTheme,
     toggleTheme,
     setProteinGoal,
+    setCalorieGoal,
+    setNutritionTracking,
     formatWeight,
+    togglePage,
+    isPageEnabled,
   }
 })

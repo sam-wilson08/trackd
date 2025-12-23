@@ -24,9 +24,9 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
-      path: '/protein',
-      name: 'protein',
-      component: () => import('../views/ProteinView.vue'),
+      path: '/nutrition',
+      name: 'nutrition',
+      component: () => import('../views/NutritionView.vue'),
       meta: { requiresAuth: true },
     },
     {
@@ -42,9 +42,15 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
-      path: '/goals',
-      name: 'goals',
-      component: () => import('../views/GoalsView.vue'),
+      path: '/rewards',
+      name: 'rewards',
+      component: () => import('../views/RewardsView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/milestones',
+      name: 'milestones',
+      component: () => import('../views/MilestonesView.vue'),
       meta: { requiresAuth: true },
     },
     {

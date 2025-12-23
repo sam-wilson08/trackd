@@ -24,6 +24,20 @@ const reps = ref('')
 const weight = ref('')
 const isSubmitting = ref(false)
 
+// Group editing
+const showGroupEdit = ref(false)
+const editGroup = ref('')
+const isSavingGroup = ref(false)
+const allGroups = ref<string[]>([])
+const showGroupDropdown = ref(false)
+
+// Filtered group suggestions
+const filteredGroups = computed(() => {
+  if (!editGroup.value.trim()) return allGroups.value
+  const search = editGroup.value.toLowerCase()
+  return allGroups.value.filter((g) => g.toLowerCase().includes(search))
+})
+
 async function loadData() {
   if (!auth.user?.id) return
   isLoading.value = true
@@ -49,6 +63,19 @@ async function loadData() {
 
     if (recordsError) throw recordsError
     records.value = (recordsData ?? []) as PersonalBestRecord[]
+
+    // Load all group names for suggestions
+    const { data: allPbs } = await supabase
+      .from('personal_bests')
+      .select('group_name')
+      .eq('user_id', auth.user.id)
+      .not('group_name', 'is', null)
+
+    const groups = new Set<string>()
+    allPbs?.forEach((p) => {
+      if (p.group_name) groups.add(p.group_name)
+    })
+    allGroups.value = Array.from(groups).sort()
   } catch (e) {
     console.error('Failed to load data:', e)
     router.push('/pb')
@@ -93,6 +120,36 @@ async function deleteRecord(id: string) {
   } catch (e) {
     console.error('Failed to delete record:', e)
   }
+}
+
+function startGroupEdit() {
+  editGroup.value = personalBest.value?.group_name || ''
+  showGroupEdit.value = true
+}
+
+async function saveGroup() {
+  if (!personalBest.value) return
+  isSavingGroup.value = true
+
+  try {
+    const { error } = await supabase
+      .from('personal_bests')
+      .update({ group_name: editGroup.value.trim() || null })
+      .eq('id', pbId)
+
+    if (error) throw error
+    personalBest.value.group_name = editGroup.value.trim() || null
+    showGroupEdit.value = false
+  } catch (e) {
+    console.error('Failed to update group:', e)
+  } finally {
+    isSavingGroup.value = false
+  }
+}
+
+function selectGroupFromDropdown(group: string) {
+  editGroup.value = group
+  showGroupDropdown.value = false
 }
 
 function formatDate(dateStr: string) {
@@ -148,6 +205,66 @@ onMounted(() => {
             {{ latestRecord.sets }} sets x {{ latestRecord.reps }} reps @ {{ latestRecord.weight }}kg
           </p>
           <p class="text-sm text-slate-500 mt-1">{{ formatDate(latestRecord.recorded_at) }}</p>
+        </div>
+
+        <!-- Group section -->
+        <div class="bg-slate-800 rounded-xl p-4 mb-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm text-slate-400 mb-1">Group</p>
+              <p v-if="!showGroupEdit" class="text-white">
+                {{ personalBest.group_name || 'No group' }}
+              </p>
+            </div>
+            <button
+              v-if="!showGroupEdit"
+              @click="startGroupEdit"
+              class="text-sm text-emerald-400 hover:text-emerald-300"
+            >
+              Edit
+            </button>
+          </div>
+
+          <!-- Group edit form -->
+          <div v-if="showGroupEdit" class="mt-3 relative">
+            <input
+              v-model="editGroup"
+              type="text"
+              placeholder="Enter group name"
+              class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              @focus="showGroupDropdown = true"
+              @blur="setTimeout(() => showGroupDropdown = false, 150)"
+            />
+            <!-- Group suggestions dropdown -->
+            <div
+              v-if="showGroupDropdown && filteredGroups.length > 0"
+              class="absolute z-10 w-full mt-1 bg-slate-700 border border-slate-600 rounded-lg shadow-lg overflow-hidden"
+            >
+              <button
+                v-for="group in filteredGroups"
+                :key="group"
+                @mousedown.prevent="selectGroupFromDropdown(group)"
+                class="w-full px-3 py-2 text-left text-white hover:bg-slate-600 transition-colors"
+              >
+                {{ group }}
+              </button>
+            </div>
+            <div class="flex gap-2 mt-3">
+              <button
+                @click="showGroupEdit = false"
+                class="flex-1 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                @click="saveGroup"
+                :disabled="isSavingGroup"
+                class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 rounded-lg font-medium transition-colors text-sm"
+              >
+                {{ isSavingGroup ? 'Saving...' : 'Save' }}
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- Update PB button -->
