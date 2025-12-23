@@ -127,6 +127,12 @@ function startGroupEdit() {
   showGroupEdit.value = true
 }
 
+function hideGroupDropdownDelayed() {
+  setTimeout(() => {
+    showGroupDropdown.value = false
+  }, 150)
+}
+
 async function saveGroup() {
   if (!personalBest.value) return
   isSavingGroup.value = true
@@ -233,7 +239,7 @@ onMounted(() => {
               placeholder="Enter group name"
               class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               @focus="showGroupDropdown = true"
-              @blur="setTimeout(() => showGroupDropdown = false, 150)"
+              @blur="hideGroupDropdownDelayed"
             />
             <!-- Group suggestions dropdown -->
             <div

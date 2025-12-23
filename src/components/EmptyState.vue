@@ -1,6 +1,6 @@
 <script setup lang="ts">
 defineProps<{
-  icon?: 'goals' | 'data' | 'protein' | 'pb' | 'generic'
+  icon?: 'goals' | 'data' | 'protein' | 'pb' | 'calendar' | 'generic'
   title: string
   description?: string
 }>()
@@ -28,6 +28,11 @@ defineProps<{
       <!-- Personal best/trophy icon -->
       <svg v-else-if="icon === 'pb'" class="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+      </svg>
+
+      <!-- Calendar icon -->
+      <svg v-else-if="icon === 'calendar'" class="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
       </svg>
 
       <!-- Generic empty icon -->

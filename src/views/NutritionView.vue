@@ -322,29 +322,29 @@ async function loadData() {
 
     if (loadProtein) {
       promises.push(
-        supabase
-          .from('protein_intake')
-          .select('*')
-          .eq('user_id', auth.user.id)
-          .order('recorded_at', { ascending: false })
-          .then(({ data, error }) => {
-            if (error) throw error
-            proteinIntakes.value = (data ?? []) as ProteinIntake[]
-          })
+        (async () => {
+          const { data, error } = await supabase
+            .from('protein_intake')
+            .select('*')
+            .eq('user_id', auth.user!.id)
+            .order('recorded_at', { ascending: false })
+          if (error) throw error
+          proteinIntakes.value = (data ?? []) as ProteinIntake[]
+        })()
       )
     }
 
     if (loadCalories) {
       promises.push(
-        supabase
-          .from('calorie_intake')
-          .select('*')
-          .eq('user_id', auth.user.id)
-          .order('recorded_at', { ascending: false })
-          .then(({ data, error }) => {
-            if (error) throw error
-            calorieIntakes.value = (data ?? []) as CalorieIntake[]
-          })
+        (async () => {
+          const { data, error } = await supabase
+            .from('calorie_intake')
+            .select('*')
+            .eq('user_id', auth.user!.id)
+            .order('recorded_at', { ascending: false })
+          if (error) throw error
+          calorieIntakes.value = (data ?? []) as CalorieIntake[]
+        })()
       )
     }
 

@@ -64,7 +64,7 @@ const groupedPBs = computed(() => {
       if (!groups[pb.group_name]) {
         groups[pb.group_name] = []
       }
-      groups[pb.group_name].push(pb)
+      groups[pb.group_name]!.push(pb)
     } else {
       ungrouped.push(pb)
     }
@@ -89,6 +89,12 @@ function toggleGroup(groupName: string) {
 function selectGroupSuggestion(group: string) {
   newPBGroup.value = group
   showGroupSuggestions.value = false
+}
+
+function hideGroupSuggestionsDelayed() {
+  setTimeout(() => {
+    showGroupSuggestions.value = false
+  }, 150)
 }
 
 async function loadPersonalBests() {
@@ -304,7 +310,7 @@ onMounted(() => {
             placeholder="e.g. Upper Body, Legs, Olympic Lifts"
             class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             @focus="showGroupSuggestions = true"
-            @blur="setTimeout(() => showGroupSuggestions = false, 150)"
+            @blur="hideGroupSuggestionsDelayed"
             @keyup.enter="createPB"
           />
           <!-- Group suggestions dropdown -->
@@ -407,7 +413,7 @@ onMounted(() => {
               </svg>
               <span class="font-medium text-slate-300">{{ groupName }}</span>
             </div>
-            <span class="text-sm text-slate-500">{{ groupedPBs.groups[groupName].length }}</span>
+            <span class="text-sm text-slate-500">{{ groupedPBs.groups[groupName]?.length }}</span>
           </button>
 
           <!-- Group items (collapsed/expanded) -->
