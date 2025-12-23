@@ -113,10 +113,7 @@ async function handleSubmit() {
           {{ isSignUp ? 'Already have an account?' : "Don't have an account?" }}
           <button
             type="button"
-            @click="
-              isSignUp = !isSignUp
-              error = ''
-            "
+            @click="isSignUp = !isSignUp; error = ''"
             class="text-emerald-400 hover:text-emerald-300 font-medium ml-1"
           >
             {{ isSignUp ? 'Sign In' : 'Sign Up' }}
