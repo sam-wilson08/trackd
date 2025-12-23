@@ -273,7 +273,7 @@ onMounted(() => {
 
 <template>
   <div class="min-h-screen bg-slate-900 text-white">
-    <header class="bg-slate-800 px-4 py-4">
+    <header class="bg-slate-900 px-4 py-4">
       <div class="flex items-center justify-between">
         <div class="w-20">
           <button @click="router.push('/')" class="text-slate-400 hover:text-white">
@@ -282,7 +282,7 @@ onMounted(() => {
             </svg>
           </button>
         </div>
-        <h1 class="text-xl font-bold text-emerald-400">Rewards</h1>
+        <div class="w-20"></div>
         <div class="flex items-center gap-1 w-24 justify-end">
           <button
             @click="router.push('/milestones')"

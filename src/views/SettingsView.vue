@@ -91,7 +91,7 @@ async function exportData() {
 
 <template>
   <div class="min-h-screen bg-slate-900 text-white">
-    <header class="bg-slate-800 px-4 py-4">
+    <header class="bg-slate-900 px-4 py-4">
       <div class="flex items-center justify-between">
         <div class="w-20">
           <button @click="router.push('/')" class="text-slate-400 hover:text-white">
@@ -111,7 +111,7 @@ async function exportData() {
             </svg>
           </button>
         </div>
-        <h1 class="text-xl font-bold text-emerald-400">Settings</h1>
+        <div class="w-20"></div>
         <div class="w-20"></div>
       </div>
     </header>
@@ -307,31 +307,6 @@ async function exportData() {
                 d="M9 5l7 7-7 7"
               />
             </svg>
-          </button>
-        </div>
-      </section>
-
-      <!-- Account -->
-      <section class="mb-6">
-        <h2 class="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3">Account</h2>
-        <div class="bg-slate-800 rounded-xl overflow-hidden">
-          <div class="px-4 py-3 border-b border-slate-700">
-            <p class="text-sm text-slate-400">Email</p>
-            <p class="text-white">{{ auth.user?.email }}</p>
-          </div>
-          <button
-            @click="auth.signOut()"
-            class="w-full px-4 py-3 flex items-center gap-3 text-red-400 hover:bg-slate-700 transition-colors"
-          >
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-              />
-            </svg>
-            <span>Sign Out</span>
           </button>
         </div>
       </section>

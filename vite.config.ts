@@ -19,7 +19,7 @@ export default defineConfig({
         name: 'Trak',
         short_name: 'Trak',
         description: 'Track your workouts and fitness progress',
-        theme_color: '#10b981',
+        theme_color: '#0f172a',
         background_color: '#0f172a',
         display: 'standalone',
         orientation: 'portrait',

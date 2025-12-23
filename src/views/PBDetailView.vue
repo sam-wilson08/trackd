@@ -174,7 +174,7 @@ onMounted(() => {
 
 <template>
   <div class="min-h-screen bg-slate-900 text-white">
-    <header class="bg-slate-800 px-4 py-4">
+    <header class="bg-slate-900 px-4 py-4">
       <div class="flex items-center justify-between">
         <div class="w-20">
           <button @click="router.push('/pb')" class="text-slate-400 hover:text-white">
@@ -183,18 +183,8 @@ onMounted(() => {
             </svg>
           </button>
         </div>
-        <h1 class="text-xl font-bold text-emerald-400">{{ personalBest?.name || 'Loading...' }}</h1>
-        <div class="w-20 flex justify-end">
-          <button
-            @click="auth.signOut()"
-            class="text-slate-400 hover:text-white p-1"
-            title="Sign Out"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-            </svg>
-          </button>
-        </div>
+        <div class="w-20"></div>
+        <div class="w-20"></div>
       </div>
     </header>
 
