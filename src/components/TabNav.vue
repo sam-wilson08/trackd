@@ -26,7 +26,7 @@ const icons: Record<string, string> = {
 </script>
 
 <template>
-  <nav class="fixed bottom-0 left-0 right-0 bg-slate-800 border-t border-slate-700 z-50 pb-safe">
+  <nav class="fixed bottom-0 left-0 right-0 bg-slate-800 border-t border-slate-700 z-50 pb-safe pb-4">
     <div class="flex">
       <button
         v-for="tab in tabs"
