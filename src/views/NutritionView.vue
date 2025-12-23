@@ -505,7 +505,7 @@ onMounted(() => {
 
 <template>
   <div class="min-h-screen bg-slate-900 text-white">
-    <header class="bg-slate-800 border-b border-slate-700 px-4 py-4">
+    <header class="bg-slate-800 px-4 py-4">
       <div class="flex items-center justify-between">
         <div class="w-20"></div>
         <h1 class="text-xl font-bold text-emerald-400">Trak</h1>
@@ -582,7 +582,7 @@ onMounted(() => {
 
     <TabNav />
 
-    <main class="p-4">
+    <main class="p-4 pb-20">
       <!-- Toggle tabs for "both" mode -->
       <div v-if="isBothMode" class="flex gap-2 mb-4">
         <button

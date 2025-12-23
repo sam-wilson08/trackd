@@ -174,7 +174,7 @@ onMounted(() => {
 
 <template>
   <div class="min-h-screen bg-slate-900 text-white">
-    <header class="bg-slate-800 border-b border-slate-700 px-4 py-4">
+    <header class="bg-slate-800 px-4 py-4">
       <div class="flex items-center justify-between">
         <div class="w-20">
           <button @click="router.push('/pb')" class="text-slate-400 hover:text-white">
@@ -200,7 +200,7 @@ onMounted(() => {
 
     <TabNav />
 
-    <main class="p-4">
+    <main class="p-4 pb-20">
       <div v-if="isLoading" class="text-center py-8 text-slate-500">Loading...</div>
 
       <template v-else-if="personalBest">

@@ -517,7 +517,7 @@ onUnmounted(() => {
 <template>
   <div class="min-h-screen bg-slate-900 text-white">
     <!-- Header -->
-    <header class="bg-slate-800 border-b border-slate-700 px-4 py-4">
+    <header class="bg-slate-800 px-4 py-4">
       <div class="flex items-center justify-between">
         <div class="w-20"></div>
         <h1 class="text-xl font-bold text-emerald-400">Trak</h1>
@@ -595,7 +595,7 @@ onUnmounted(() => {
     <TabNav />
 
     <!-- Main content -->
-    <main class="p-4">
+    <main class="p-4 pb-20">
       <!-- Date and time -->
       <p class="text-slate-400 mb-1">{{ formattedDate() }}</p>
       <p class="text-2xl font-semibold text-slate-300 mb-4">{{ formattedTime() }}</p>
